@@ -21,13 +21,17 @@ public class CircularShortBuffer {
         lock = new ReentrantLock(true); // use fair locking
     }
 
+    /**
+     * Computes the number of bytes held in the buffer.
+     * @return The number of bytes held in the buffer.
+     */
     public int available() {
         try{
             lock.lock();
             if(head == null) // buffer is empty
-                return bufferSize;
+                return 0;
             // otherwise head != tail, and if there's just one item in the buffer, tail = head + 1 % bufferSize
-            return bufferSize - ((tail - head + 1) % bufferSize);
+            return ((tail - head) % bufferSize);
         }
         finally {
             if(lock.isHeldByCurrentThread())
@@ -36,7 +40,7 @@ public class CircularShortBuffer {
     }
 
     public boolean isFull() {
-        return available() == 0;
+        return available() == bufferSize;
     }
 
     /**
@@ -47,7 +51,7 @@ public class CircularShortBuffer {
         try {
             lock.lock();
 
-            if(head == tail)
+            if(available() == 0)
                 return null;
 
             final short result = buffer[head];
@@ -89,6 +93,62 @@ public class CircularShortBuffer {
         }
 
         return true;
+    }
+
+    /**
+     * Reads at most the given number of samples from the circular buffer, and stores them in the given
+     * destination buffer, starting at index zero. The destination buffer's size must be at least the
+     * give size. The number of samples moved into the destination buffer is returned.
+     * @param size The number of samples to move from the circular buffer into the array.
+     * @param dest The array to move the samples into.
+     * @return The number of bytes moved into the array.
+     */
+    public int get(final int size, short[] dest) {
+        try {
+            lock.lock();
+            for(int i = 0; i < size; i++) {
+                final Short sample = get();
+                if(sample == null)
+                    return i;
+                dest[i] = sample;
+            }
+        }
+        finally {
+            if(lock.isHeldByCurrentThread())
+                lock.unlock();
+        }
+
+        return size;
+    }
+
+    /**
+     * Bulk copy bytes into the circular buffer.
+     *
+     * The total number of samples copied into the buffer is returned. If the overwrite flag is set,
+     * then the return value will always equal the size parameter. If the overwrite flag is not set,
+     * then the copying will stop at the first sample that would cause an overwrite.
+     *
+     * @param size The number of samples to copy from the source array.
+     * @param src The source array to copy from
+     * @param overwrite Whether to overwrite unread samples in the circular buffer.
+     * @return The number of bytes written into the circular buffer
+     */
+    public int put(final int size, final short[] src, boolean overwrite) {
+        try {
+            lock.lock();
+
+            for(int i = 0; i < size; i++) {
+                if(!put(src[i], overwrite)) {
+                    return i;
+                }
+            }
+        }
+        finally {
+            if(lock.isHeldByCurrentThread())
+                lock.unlock();
+        }
+
+        return size;
     }
 
     private void incrementHead() {
