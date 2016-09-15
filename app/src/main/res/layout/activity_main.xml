@@ -10,7 +10,16 @@
     tools:context="club.labcoders.playback.MainActivity">
 
     <TextView
+        android:id="@+id/statusText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Hello World!" />
+        android:text="@string/statusPlaceholder" />
+
+    <Button
+        android:id="@+id/recordButton"
+        android:text="@string/recordButtonLabel"
+        android:layout_below="@id/statusText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content" />
+
 </RelativeLayout>
