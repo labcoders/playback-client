@@ -16,15 +16,15 @@
         android:text="@string/statusPlaceholder" />
 
     <Button
-        android:id="@+id/recordButton"
-        android:text="@string/recordButtonLabel"
+        android:id="@+id/uploadButton"
+        android:text="@string/uploadButtonLabel"
         android:layout_below="@id/statusText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content" />
 
     <Button
         android:id="@+id/pingButton"
-        android:layout_below="@id/recordButton"
+        android:layout_below="@id/uploadButton"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="@string/pingLabel"/>

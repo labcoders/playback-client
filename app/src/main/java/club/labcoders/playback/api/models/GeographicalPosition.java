@@ -10,6 +10,11 @@ public class GeographicalPosition {
         longitude = 0;
     }
 
+    public GeographicalPosition(double latitude, double longitude) {
+        this.latitude = latitude;
+        this.longitude = longitude;
+    }
+
     public double getLatitude() {
         return latitude;
     }

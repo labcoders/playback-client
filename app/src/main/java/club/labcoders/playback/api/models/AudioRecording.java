@@ -8,6 +8,19 @@ public class AudioRecording {
     private Base64Blob recording;
     private GeographicalPosition location;
 
+    public AudioRecording(DateTime timestamp, double duration, Base64Blob recording, GeographicalPosition location) {
+        this.timestamp = timestamp;
+        this.duration = duration;
+        this.recording = recording;
+        this.location = location;
+    }
+
+    public AudioRecording(DateTime timestamp, double duration, Base64Blob recording) {
+        this.timestamp = timestamp;
+        this.recording = recording;
+        this.duration = duration;
+    }
+
     public DateTime getTimestamp() {
         return timestamp;
     }
