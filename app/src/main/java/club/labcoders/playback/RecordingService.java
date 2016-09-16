@@ -247,10 +247,7 @@ public class RecordingService extends Service {
         final Subscription producer = audioStream
                 .subscribeOn(Schedulers.io())
                 .observeOn(Schedulers.io())
-                .subscribe(shorts -> {
-                    audioBufferQueue.add(shorts);
-                    final int count = audioBufferQueueLength.incrementAndGet();
-                });
+                .subscribe(audioBufferQueue::add);
         subscriptions.add(producer);
 
         final Observable<Void> gcTimer = Observable.create(subscriber -> {
