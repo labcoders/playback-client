@@ -4,4 +4,5 @@
     <string name="statusRecording">Recording.</string>
     <string name="statusNotRecording">Not recording.</string>
     <string name="recordButtonLabel">Record</string>
+    <string name="pingLabel">Ping server</string>
 </resources>

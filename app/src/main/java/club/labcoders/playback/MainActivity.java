@@ -12,9 +12,14 @@ import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.joda.time.DateTime;
+
 import butterknife.BindView;
 import butterknife.ButterKnife;
 import butterknife.OnClick;
+import club.labcoders.playback.api.ApiManager;
+import club.labcoders.playback.api.PlaybackApi;
+import club.labcoders.playback.api.models.Ping;
 import rx.Observable;
 import rx.Subscription;
 import rx.android.schedulers.AndroidSchedulers;
@@ -55,6 +60,30 @@ public class MainActivity extends AppCompatActivity {
                     });
             subscriptions.add(sub);
         }
+    }
+
+    @OnClick(R.id.pingButton)
+    public void onPingButtonClick() {
+        final PlaybackApi api = ApiManager.getInstance().getApi();
+        final DateTime now = DateTime.now();
+        Timber.d("Now is: %s.", now);
+        subscriptions.add(
+                api.postPing(new Ping(now))
+                        .subscribeOn(Schedulers.io())
+                        .observeOn(AndroidSchedulers.mainThread())
+                        .subscribe(pong -> {
+                            final DateTime then = pong.getPong();
+                            Timber.d("Now became: %s", then.toString());
+                            Toast.makeText(
+                                    MainActivity.this,
+                                    String.format(
+                                            "Got pong %s!",
+                                            then.toString()
+                                    ),
+                                    Toast.LENGTH_LONG
+                            ).show();
+                        })
+        );
     }
 
     @Override
