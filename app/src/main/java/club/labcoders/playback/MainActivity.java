@@ -114,8 +114,7 @@ public class MainActivity extends AppCompatActivity {
                         },
                         err -> {
                             Timber.e(err.getMessage());
-                        })
-                    .last();
+                        });
 
             // Construct blob.
             blob = new Base64Blob(compressedAudio.toByteArray());
@@ -143,10 +142,21 @@ public class MainActivity extends AppCompatActivity {
 
             Observable<Integer> uploadResult = httpService.upload(recording);
 
-            uploadResult.subscribe(uploadID -> {
-                Toast.makeText(this, "Successfully uploaded. Id is : " + uploadID + ".", Toast.LENGTH_SHORT).show();
-                Timber.d("Uploaded recording with id " + uploadID);
-            });
+            httpService.upload(recording)
+                    .subscribeOn(Schedulers.io())
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .subscribe(
+                            uploadID -> {
+                                Toast.makeText(this, "Successfully uploaded. Id is : " + uploadID + ".", Toast.LENGTH_SHORT).show();
+                                Timber.d("Uploaded recording with id " + uploadID);
+                            },
+                            e -> {
+                                Timber.e(e.toString());
+                            },
+                            () -> {
+                                Timber.d("Completed upload!");
+                            }
+                    );
         }
     }
 

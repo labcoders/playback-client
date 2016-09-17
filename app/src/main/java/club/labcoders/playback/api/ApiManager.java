@@ -54,6 +54,7 @@ public class ApiManager {
                         DateTime.class,
                         new DateTimeDeserializer()
                 )
+                .serializeNulls()
                 .create();
 
         adapter = new Retrofit.Builder()
