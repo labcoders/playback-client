@@ -75,11 +75,6 @@ public class MainActivity extends AppCompatActivity {
     @OnClick(R.id.uploadButton)
     public void onRecordButtonClick() {
         double length;
-        Location loc;
-        Base64Blob blob;
-        DateTime date;
-
-        AudioRecording recording;
 
         if (recordingService == null) {
             Toast.makeText(this, "No recording service.", Toast.LENGTH_SHORT).show();
@@ -107,56 +102,58 @@ public class MainActivity extends AppCompatActivity {
                     .lift(enc)
                     .subscribe(compressed -> {
                             try {
+                                Timber.d("Received encoded audio from upstream");
                                 compressedAudio.write(compressed);
                             } catch (IOException e) {
                                 Timber.e("Fuck");
+                                e.printStackTrace();
                             }
                         },
                         err -> {
-                            Timber.e(err.getMessage());
-                        });
-
-            // Construct blob.
-            blob = new Base64Blob(compressedAudio.toByteArray());
-
-            // Get current date
-            date = DateTime.now();
-
-            if (canUseFineLocation) {
-                LocationManager lcm = (LocationManager) this.getSystemService(Context.LOCATION_SERVICE);
-
-                //noinspection ResourceType
-                // Get location if we can.
-                loc = lcm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
-
-                if (loc == null) {
-                    recording = new AudioRecording(date, length, blob);
-                } else {
-                    GeographicalPosition g = new GeographicalPosition(loc.getLatitude(), loc.getLongitude());
-
-                    recording = new AudioRecording(date, length, blob, g);
-                }
-            } else {
-                recording = new AudioRecording(date, length, blob);
-            }
-
-            Observable<Integer> uploadResult = httpService.upload(recording);
-
-            httpService.upload(recording)
-                    .subscribeOn(Schedulers.io())
-                    .observeOn(AndroidSchedulers.mainThread())
-                    .subscribe(
-                            uploadID -> {
-                                Toast.makeText(this, "Successfully uploaded. Id is : " + uploadID + ".", Toast.LENGTH_SHORT).show();
-                                Timber.d("Uploaded recording with id " + uploadID);
-                            },
-                            e -> {
-                                Timber.e(e.toString());
-                            },
+                            Timber.e("Error while compressing audio. Error was: " + err.toString());
+                            err.printStackTrace();
+                        },
                             () -> {
-                                Timber.d("Completed upload!");
-                            }
-                    );
+                                // Construct blob.
+                                Timber.d("Finished encoding audio. Creating AudioRecording now.");
+                                Base64Blob blob = new Base64Blob(compressedAudio.toByteArray());
+
+                                // Get current date
+                                DateTime date = DateTime.now();
+
+                                AudioRecording recording;
+                                if (canUseFineLocation) {
+                                    LocationManager lcm = (LocationManager) this.getSystemService(Context.LOCATION_SERVICE);
+
+                                    //noinspection ResourceType
+                                    // Get location if we can.
+                                    Location loc = lcm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+
+
+                                    if (loc == null) {
+                                        recording = new AudioRecording(date, length, blob);
+                                    } else {
+                                        GeographicalPosition g = new GeographicalPosition(loc.getLatitude(), loc.getLongitude());
+
+                                        recording = new AudioRecording(date, length, blob, g);
+                                    }
+                                } else {
+                                    Timber.d("No location permissions. Creating AudioRecording sans location.");
+                                    recording = new AudioRecording(date, length, blob);
+                                }
+
+                                Timber.d("Starting upload process now.");
+                                httpService.upload(recording)
+                                        .subscribe(
+                                            uploadID -> {
+                                                Timber.d("Successfully uploaded recording with id " + uploadID);
+                                                Toast.makeText(this, "Successfully uploaded. Id is : " + uploadID + ".", Toast.LENGTH_SHORT).show();
+                                            },
+                                            err -> {
+                                                Timber.e("Recording upload failed. Error was: " + err.toString());
+                                                err.printStackTrace();
+                                        });
+                    });
         }
     }
 

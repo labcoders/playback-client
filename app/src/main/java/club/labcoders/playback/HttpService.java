@@ -21,10 +21,12 @@ public class HttpService extends Service {
     }
 
     public Observable<Integer> upload(AudioRecording rec) {
+        Timber.d("Recording upload started.");
         return api.uploadRecording(rec);
     }
 
     public Observable<AudioRecording> get(Integer id) {
+        Timber.d("Recoding retrieval started.");
         return api.getRecording(id);
     }
 

@@ -61,6 +61,7 @@ public class Encoder implements Observable.Operator<byte[], byte[]> {
         Subscriber sub = new Subscriber<byte[]>(subscriber) {
             @Override
             public void onCompleted() {
+                Timber.d("onComplete upstream to encoder called.");
                 codec.stop();
                 codec.release();
                 codecInitialized = false;
@@ -84,11 +85,12 @@ public class Encoder implements Observable.Operator<byte[], byte[]> {
                 }
                 int pointer = 0;
                 while (pointer < bytes.length) {
+                    Timber.d("Current pointer position: " + pointer  + ". Upstream byte array length: " + bytes.length);
                     int inIdx = -1;
                     int inc = 0;
 
                     while (inIdx < 0) {
-                        inIdx = codec.dequeueInputBuffer(1000);
+                        inIdx = codec.dequeueInputBuffer(1000000);
                         if (inIdx >= 0) {
                             ByteBuffer inBuffer = codec.getInputBuffer(inIdx);
                             int capacity = inBuffer.capacity();
@@ -103,14 +105,14 @@ public class Encoder implements Observable.Operator<byte[], byte[]> {
                     int outIdx = -1;
 
                     while (outIdx < 0) {
-                        outIdx = codec.dequeueOutputBuffer(new MediaCodec.BufferInfo(), 1000);
+                        outIdx = codec.dequeueOutputBuffer(new MediaCodec.BufferInfo(), 1000000);
                         Timber.d("out index: " + outIdx);
                         if (outIdx >= 0) {
-                            Timber.d("la");
                             ByteBuffer outBuffer = codec.getOutputBuffer(outIdx);
-                            Timber.d("de");
-                            subscriber.onNext(outBuffer.order(ByteOrder.nativeOrder()).array());
-                            Timber.d("emitted an outBuffer");
+                            Timber.d("Received an outBuffer.");
+                            byte[] nextBuffer = new byte[outBuffer.remaining()];
+                            outBuffer.get(nextBuffer);
+                            subscriber.onNext(nextBuffer);
                         } else {
                             switch (outIdx) {
                                 case -1:
