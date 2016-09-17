@@ -10,12 +10,14 @@ import club.labcoders.playback.api.ApiManager;
 import club.labcoders.playback.api.PlaybackApi;
 import club.labcoders.playback.api.models.AudioRecording;
 import rx.Observable;
+import timber.log.Timber;
 
 public class HttpService extends Service {
     private PlaybackApi api;
 
     public HttpService() {
         api = ApiManager.getInstance().getApi();
+        Timber.d("Http service constructor called");
     }
 
     public Observable<Integer> upload(AudioRecording rec) {
@@ -34,5 +36,11 @@ public class HttpService extends Service {
 
     public class HttpServiceBinder extends Binder {
         public HttpService getService() { return HttpService.this; }
+    }
+
+    @Override
+    public void onDestroy() {
+        Timber.d("Destroyed HTTP service.");
+        super.onDestroy();
     }
 }

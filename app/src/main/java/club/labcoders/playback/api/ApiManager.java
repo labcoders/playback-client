@@ -18,7 +18,7 @@ import retrofit2.converter.gson.GsonConverterFactory;
  * Singleton class for holding global API settings.
  */
 public class ApiManager {
-    private static final String BASE_URL = "http://10.0.3.2:8082";
+    private static final String BASE_URL = "https://tunnel-8083.jerrington.me";
 
     private static ApiManager instance;
 

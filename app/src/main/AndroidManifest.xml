@@ -26,6 +26,11 @@
             android:enabled="true"
             android:exported="true" />
 
+        <service
+            android:name=".HttpService"
+            android:enabled="true"
+            android:exported="true" />
+
         <receiver
             android:name=".AutoStart"
             android:enabled="true"

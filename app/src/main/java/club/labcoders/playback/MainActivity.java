@@ -5,12 +5,12 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
-import android.content.pm.PackageManager;
 import android.location.Location;
 import android.location.LocationManager;
+import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaCodec;
-import android.media.MediaCodecList;
+import android.media.MediaCodecInfo;
 import android.media.MediaFormat;
 import android.os.IBinder;
 import android.support.annotation.NonNull;
@@ -48,8 +48,8 @@ import timber.log.Timber;
 import static android.content.pm.PackageManager.PERMISSION_GRANTED;
 import static android.media.MediaFormat.KEY_BIT_RATE;
 import static android.media.MediaFormat.KEY_CHANNEL_COUNT;
-import static android.media.MediaFormat.KEY_MIME;
 import static android.media.MediaFormat.KEY_SAMPLE_RATE;
+import static club.labcoders.playback.Encoder.MIME_TYPE;
 
 public class MainActivity extends AppCompatActivity {
     private static final int FINE_LOCATION_PERMISSION_REQUEST = 0;
@@ -73,7 +73,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @OnClick(R.id.uploadButton)
-    public void onRecordButtonClick() throws IOException, InterruptedException {
+    public void onRecordButtonClick() {
         double length;
         Location loc;
         Base64Blob blob;
@@ -88,21 +88,10 @@ public class MainActivity extends AppCompatActivity {
         } else {
             short[] shorts = recordingService.getBufferedAudio();
 
-            String mimetype = MimeTypeMap.getSingleton().getMimeTypeFromExtension("ogg");
-
-            MediaCodec codec = MediaCodec.createEncoderByType(mimetype);
-            MediaFormat format = new MediaFormat();
-            format.setString(MediaFormat.KEY_MIME, mimetype);
-            format.setInteger(KEY_BIT_RATE, 128);
-            format.setInteger(KEY_SAMPLE_RATE, recordingService.SAMPLE_RATE);
-            format.setInteger(KEY_CHANNEL_COUNT, 1);
-
-            codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
-
-            Encoder enc = new Encoder(codec);
+            Encoder enc = new Encoder();
 
             // Calculate length of audio
-            length = shorts.length / recordingService.SAMPLE_RATE;
+            length = shorts.length / RecordingService.SAMPLE_RATE;
 
             ByteBuffer buf = ByteBuffer.allocate(shorts.length * 2);
             for (short s : shorts) {
@@ -110,26 +99,23 @@ public class MainActivity extends AppCompatActivity {
             }
 
             byte[] rawAudio = buf.array();
-            ByteArrayOutputStream compressedAudio = new ByteArrayOutputStream():
+            ByteArrayOutputStream compressedAudio = new ByteArrayOutputStream();
 
             CVar<Void> signal = new CVar();
 
-            Observable.just(rawAudio).lift(enc).doOnNext(compressed -> {
-                try {
-                    compressedAudio.write(compressed);
-                } catch (IOException e) {
-                    Timber.e("Fuck")
-                }
-            }).doOnCompleted(() -> {
-                try {
-                    signal.write(null);
-                } catch (InterruptedException e) {
-                    Timber.e("Jesus fucking christ")
-                }
-            });
-
-            // Resynchronize.
-            signal.read();
+            Observable.just(rawAudio)
+                    .lift(enc)
+                    .subscribe(compressed -> {
+                            try {
+                                compressedAudio.write(compressed);
+                            } catch (IOException e) {
+                                Timber.e("Fuck");
+                            }
+                        },
+                        err -> {
+                            Timber.e(err.getMessage());
+                        })
+                    .last();
 
             // Construct blob.
             blob = new Base64Blob(compressedAudio.toByteArray());
@@ -160,7 +146,7 @@ public class MainActivity extends AppCompatActivity {
             uploadResult.subscribe(uploadID -> {
                 Toast.makeText(this, "Successfully uploaded. Id is : " + uploadID + ".", Toast.LENGTH_SHORT).show();
                 Timber.d("Uploaded recording with id " + uploadID);
-            });;
+            });
         }
     }
 
@@ -184,6 +170,8 @@ public class MainActivity extends AppCompatActivity {
                                     ),
                                     Toast.LENGTH_LONG
                             ).show();
+                        }, err -> {
+                            Toast.makeText(this, "Could not connect to server.", Toast.LENGTH_SHORT);
                         })
         );
     }
@@ -239,13 +227,16 @@ public class MainActivity extends AppCompatActivity {
     }
 
     final ServiceConnection httpConnection = new ServiceConnection() {
+        @Override
         public void onServiceConnected(ComponentName name, IBinder service) {
             final HttpService.HttpServiceBinder binder = (HttpService.HttpServiceBinder) service;
             httpService = binder.getService();
+            Timber.d("Assigned httpService");
         }
 
         @Override
         public void onServiceDisconnected(ComponentName name) {
+            Timber.d("Http service disconnected");
             httpService = null;
         }
     };
@@ -280,6 +271,7 @@ public class MainActivity extends AppCompatActivity {
 
         @Override
         public void onServiceDisconnected(ComponentName name) {
+            Timber.d("Recording service disconnected");
             recordingService = null;
         }
     };
@@ -288,11 +280,7 @@ public class MainActivity extends AppCompatActivity {
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         switch (requestCode) {
             case 0:
-                if (grantResults[0] == PERMISSION_GRANTED) {
-                    canUseFineLocation = true;
-                } else {
-                    canUseFineLocation = false;
-                }
+                canUseFineLocation =  (grantResults[0] == PERMISSION_GRANTED);
                 break;
             default:
                 throw new RuntimeException("Unexpected request code " + requestCode + " for permission request");

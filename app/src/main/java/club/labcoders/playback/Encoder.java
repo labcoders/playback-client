@@ -1,12 +1,14 @@
 package club.labcoders.playback;
 
+import android.media.AudioFormat;
 import android.media.MediaCodec;
+import android.media.MediaCodecInfo;
 import android.media.MediaFormat;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.List;
-import java.util.Queue;
+import java.nio.ByteOrder;
 
 import club.labcoders.playback.concurrent.CVar;
 import rx.Observable;
@@ -17,77 +19,36 @@ import timber.log.Timber;
  * Class for wrapping Android's built-in encoding facilities with RxJava.
  */
 public class Encoder implements Observable.Operator<byte[], byte[]> {
-    final MediaCodec codec;
+    MediaCodec codec;
 
     boolean hasError = false;
     Throwable error = null;
 
-    private boolean finished;
-    private boolean codecStarted;
+    private boolean codecInitialized;
 
-    public Encoder(final MediaCodec configuredCodec) {
-        codec = configuredCodec;
-        finished = false;
-        codecStarted = false;
+    public final static String MIME_TYPE = MediaFormat.MIMETYPE_AUDIO_AAC;
+
+    public Encoder() {
+        codecInitialized = false;
     }
 
-    public class ExposedSubscriber  extends Subscriber<byte[]> {
-        private Subscriber<? super byte[]> subscriber;
-        private CVar<Integer> bufferIndex;
-
-        public ExposedSubscriber(Subscriber<? super byte[]> sub, CVar<Integer> cvar) {
-            subscriber = sub;
-            bufferIndex = cvar;
+    private void initCodec() {
+        try {
+            codec = MediaCodec.createEncoderByType(MIME_TYPE);
+        } catch (IOException e) {
+            Timber.e("Could not create MediaCodec with mimetype: " + MIME_TYPE);
         }
 
-        public Subscriber<? super byte[]> getSubscriber() {
-            return subscriber;
-        }
+        MediaFormat format = MediaFormat.createAudioFormat(MIME_TYPE, RecordingService.SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO);
+        format.setInteger(MediaFormat.KEY_BIT_RATE, 128000);
+        format.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC);
+        format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 10000);
+        format.setInteger(MediaFormat.KEY_CHANNEL_COUNT, 1);
 
-        @Override
-        public void onCompleted() {
-            try {
-                int idx = bufferIndex.read();
-                codec.queueInputBuffer(idx, 0, 0, 0, codec.BUFFER_FLAG_END_OF_STREAM);
-            } catch (InterruptedException e) {
-                onError(e);
-            }
-        }
+        codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
+        codec.start();
 
-        @Override
-        public void onError(Throwable e) {
-            if(!subscriber.isUnsubscribed()) {
-                subscriber.onError(e);
-            }
-        }
-
-        @Override
-        public void onNext(byte[] bytes) {
-            if (!codecStarted) {
-                codec.start();
-                codecStarted = true;
-            }
-            byte[] encoded = null;
-            if(subscriber.isUnsubscribed()) {
-                return;
-            }
-            try {
-                int pointer = 0;
-                while (pointer < bytes.length) {
-                    int idx = bufferIndex.read();
-                    ByteBuffer buffer = codec.getInputBuffer(idx);
-                    int capacity = buffer.capacity();
-                    int inc = Math.min(bytes.length - pointer, capacity);
-
-                    buffer.put(bytes, pointer, inc);
-                    codec.queueInputBuffer(idx, 0, inc, 0, 0);
-
-                    pointer += inc;
-                }
-            } catch (InterruptedException e) {
-                onError(e);
-            }
-        }
+        codecInitialized = true;
     }
 
     @Override
@@ -97,53 +58,127 @@ public class Encoder implements Observable.Operator<byte[], byte[]> {
         final CVar<Integer> bufferIndex = new CVar<Integer>();
         ByteArrayOutputStream output = new ByteArrayOutputStream();
 
-        ExposedSubscriber exp = new ExposedSubscriber(subscriber, bufferIndex);
-
-        callback = new MediaCodec.Callback() {
+        Subscriber sub = new Subscriber<byte[]>(subscriber) {
             @Override
-            public void onInputBufferAvailable(
-                    MediaCodec codec, int index) {
-                try {
-                    bufferIndex.write(index);
-                }
-                catch(InterruptedException e) {
-                    Timber.e("HOLY SHIT");
-                    hasError = true;
-                    error = e;
-                }
+            public void onCompleted() {
+                codec.stop();
+                codec.release();
+                codecInitialized = false;
+                subscriber.onCompleted();
             }
 
             @Override
-            public void onOutputBufferAvailable(
-                    MediaCodec codec,
-                    int index,
-                    MediaCodec.BufferInfo info) {
-                if (0 != (info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM)) {
-                    exp.getSubscriber().onNext(codec.getOutputBuffer(index).array());
-                    exp.getSubscriber().onCompleted();
-                    codec.stop();
-                } else {
-                    exp.getSubscriber().onNext(codec.getOutputBuffer(index).array());
+            public void onError(Throwable e) {
+                if(!subscriber.isUnsubscribed()) {
+                    subscriber.onError(e);
                 }
             }
 
             @Override
-            public void onError(
-                    MediaCodec codec,
-                    MediaCodec.CodecException e) {
+            public void onNext(byte[] bytes) {
+                if (!codecInitialized) {
+                    initCodec();
+                }
+                if(subscriber.isUnsubscribed()) {
+                    return;
+                }
+                int pointer = 0;
+                while (pointer < bytes.length) {
+                    int inIdx = -1;
+                    int inc = 0;
 
-            }
+                    while (inIdx < 0) {
+                        inIdx = codec.dequeueInputBuffer(1000);
+                        if (inIdx >= 0) {
+                            ByteBuffer inBuffer = codec.getInputBuffer(inIdx);
+                            int capacity = inBuffer.capacity();
+                            inc = Math.min(bytes.length - pointer, capacity);
 
-            @Override
-            public void onOutputFormatChanged(
-                    MediaCodec codec,
-                    MediaFormat format) {
+                            inBuffer.put(bytes, pointer, inc);
+                            codec.queueInputBuffer(inIdx, 0, inc, 0, 0);
+                        }
+                        Timber.d("In index: " + inIdx);
+                    }
 
+                    int outIdx = -1;
+
+                    while (outIdx < 0) {
+                        outIdx = codec.dequeueOutputBuffer(new MediaCodec.BufferInfo(), 1000);
+                        Timber.d("out index: " + outIdx);
+                        if (outIdx >= 0) {
+                            Timber.d("la");
+                            ByteBuffer outBuffer = codec.getOutputBuffer(outIdx);
+                            Timber.d("de");
+                            subscriber.onNext(outBuffer.order(ByteOrder.nativeOrder()).array());
+                            Timber.d("emitted an outBuffer");
+                        } else {
+                            switch (outIdx) {
+                                case -1:
+                                    Timber.e("Timed out while waiting for output buffer.");
+                                    break;
+                                case -2:
+                                    Timber.d("Output format changed");
+                                    break;
+                                case -3:
+                                    Timber.d("Output buffers changed (DEPRECATED).");
+                                    break;
+                                default:
+                                    Timber.e("THE END IS NIGH");
+                            }
+                        }
+                    }
+                    pointer += inc;
+                }
+                Timber.d("Finished writing " + bytes.length + " to observer.");
             }
         };
 
-        codec.setCallback(callback);
+//        callback = new MediaCodec.Callback() {
+//            @Override
+//            public void onInputBufferAvailable(
+//                    MediaCodec codec, int index) {
+//                try {
+//                    Timber.d("Codec thread ID: " + String.valueOf(Thread.currentThread()));
+//                    bufferIndex.write(index);
+//                }
+//                catch(InterruptedException e) {
+//                    Timber.e("HOLY SHIT");
+//                    hasError = true;
+//                    error = e;
+//                }
+//            }
+//
+//            @Override
+//            public void onOutputBufferAvailable(
+//                    MediaCodec codec,
+//                    int index,
+//                    MediaCodec.BufferInfo info) {
+//                if (0 != (info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM)) {
+//                    subscriber.onNext(codec.getOutputBuffer(index).array());
+//                    subscriber.onCompleted();
+//                    codec.stop();
+//                } else {
+//                    subscriber.onNext(codec.getOutputBuffer(index).array());
+//                }
+//            }
+//
+//            @Override
+//            public void onError(
+//                    MediaCodec codec,
+//                    MediaCodec.CodecException e) {
+//
+//            }
+//
+//            @Override
+//            public void onOutputFormatChanged(
+//                    MediaCodec codec,
+//                    MediaFormat format) {
+//
+//            }
+//        };
+//
+//        codec.setCallback(callback);
 
-        return exp;
+        return sub;
     }
 }
