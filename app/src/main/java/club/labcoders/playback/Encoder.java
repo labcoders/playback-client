@@ -43,7 +43,7 @@ public class Encoder implements Observable.Operator<byte[], byte[]> {
         MediaFormat format = MediaFormat.createAudioFormat(MIME_TYPE, RecordingService.SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO);
         format.setInteger(MediaFormat.KEY_BIT_RATE, 128000);
         format.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC);
-        format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 10000);
+        format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 1000000);
         format.setInteger(MediaFormat.KEY_CHANNEL_COUNT, 1);
 
         codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
@@ -86,33 +86,39 @@ public class Encoder implements Observable.Operator<byte[], byte[]> {
                     initCodec();
                 }
                 int pointer = 0;
-                long time = 0;
                 while (pointer < bytes.length) {
                     Timber.d("Current pointer position: " + pointer  + ". Upstream byte array length: " + bytes.length);
                     int inIdx = -1;
                     int inc = 0;
 
-                    while (inIdx < 0) {
-                        inIdx = codec.dequeueInputBuffer(1000000);
+                    int getInputBufferTries = 3;
+
+                    while (inIdx < 0 && getInputBufferTries > 0) {
+                        inIdx = codec.dequeueInputBuffer(1000);
                         if (inIdx >= 0) {
                             ByteBuffer inBuffer = codec.getInputBuffer(inIdx);
                             int capacity = inBuffer.capacity();
+
+                            // inc is number of bytes that we are going
+                            // to write into the inputBuffer
                             inc = Math.min(bytes.length - pointer, capacity);
-                            time += inc / 2 /
-                                    (RecordingService.SAMPLE_RATE / 1.e6);
 
                             inBuffer.put(bytes, pointer, inc);
-                            codec.queueInputBuffer(inIdx, 0, inc, time, 0);
+                            pointer += inc;
+                            codec.queueInputBuffer(inIdx, 0, inc, 0, 0);
                         }
+                        getInputBufferTries -= 1;
                         Timber.d("In index: %d", inIdx);
                     }
+                    getInputBufferTries = 3;
 
                     int outIdx = -1;
 
-                    while (outIdx < 0) {
+                    int getOutputBufferTries = 3;
+                    while (outIdx < 0 && getOutputBufferTries > 0) {
                         final MediaCodec.BufferInfo info
                                 = new MediaCodec.BufferInfo();
-                        outIdx = codec.dequeueOutputBuffer(info, 1000000);
+                        outIdx = codec.dequeueOutputBuffer(info, 1000);
                         Timber.d("out index: " + outIdx);
                         if (outIdx >= 0) {
                             ByteBuffer outBuffer = codec.getOutputBuffer(outIdx);
@@ -141,10 +147,10 @@ public class Encoder implements Observable.Operator<byte[], byte[]> {
                                 default:
                                     Timber.e("THE END IS NIGH");
                             }
+                            getOutputBufferTries -= 1;
                         }
                     }
-
-                    pointer += inc;
+                    getOutputBufferTries = 3;
                 }
                 Timber.d("Finished writing %d to observer", bytes.length);
             }

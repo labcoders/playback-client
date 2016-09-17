@@ -95,34 +95,55 @@ public class MainActivity extends AppCompatActivity {
             ByteArrayOutputStream compressedAudio = new ByteArrayOutputStream();
 
             Observable.just(rawAudio)
-                    //.lift(new Encoder())
-                    .flatMap(
+                    .lift(new Encoder())
+                    .doOnNext(
                             bytes -> {
-                                final AudioRecording rec = new AudioRecording(
-                                        DateTime.now(),
-                                        bytes.length
-                                                / 2.0
-                                                / RecordingService.SAMPLE_RATE,
-                                        new Base64Blob(bytes)
-                                );
-                                return httpService.upload(rec);
+                                try {
+                                    compressedAudio.write(bytes);
+                                } catch (IOException e) {
+                                    Timber.e("Could not successfully write %d bytes to byte array output stream.");
+                                    e.printStackTrace();
+                                }
+//                                final AudioRecording rec = new AudioRecording(
+//                                        DateTime.now(),
+//                                        bytes.length
+//                                                / 2.0
+//                                                / RecordingService.SAMPLE_RATE,
+//                                        new Base64Blob(bytes)
+//                                );
+//                                return httpService.upload(rec);
                             }
                     )
-                    .subscribeOn(Schedulers.io())
-                    .observeOn(AndroidSchedulers.mainThread())
-                    .subscribe(
-                            id -> {
-                                Timber.d("Uploaded raw with id %d", id);
-                                Toast.makeText(
-                                        MainActivity.this,
-                                        String.format(
-                                                "Uploaded row with id %d",
-                                                id
-                                        ),
-                                        Toast.LENGTH_LONG
-                                ).show();
-                            }
-                    );
+                    .doOnCompleted(() -> {
+                        byte[] outputBytes = compressedAudio.toByteArray();
+                            final AudioRecording rec = new AudioRecording(
+                                    DateTime.now(),
+                                    outputBytes.length
+                                            / 2.0
+                                            / RecordingService.SAMPLE_RATE,
+                                    new Base64Blob(outputBytes)
+                            );
+                            httpService.upload(rec)
+                                    .subscribeOn(Schedulers.io())
+                                    .observeOn(AndroidSchedulers.mainThread())
+                                    .subscribe(
+                                            id -> {
+                                                Timber.d("Uploaded raw with id %d", id);
+                                                Toast.makeText(
+                                                        MainActivity.this,
+                                                        String.format(
+                                                                "Uploaded row with id %d",
+                                                                id
+                                                        ),
+                                                        Toast.LENGTH_LONG
+                                                ).show();
+                                            },
+                                            err -> {
+                                                Timber.e("Failed to upload recording.");
+                                                err.printStackTrace();
+                                            }
+                                    );
+                    }).subscribe();
 
 //            Observable.just(rawAudio)
 //                    .lift(new Encoder())
