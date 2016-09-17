@@ -94,16 +94,18 @@ public class MainActivity extends AppCompatActivity {
             byte[] rawAudio = buf.array();
             ByteArrayOutputStream compressedAudio = new ByteArrayOutputStream();
 
+            Encoder enc = new Encoder();
+
             Observable.just(rawAudio)
-                    //.lift(new Encoder())
                     .flatMap(
                             bytes -> {
+                                byte[] encodedBytes = enc.encode(bytes);
                                 final AudioRecording rec = new AudioRecording(
                                         DateTime.now(),
                                         bytes.length
                                                 / 2.0
                                                 / RecordingService.SAMPLE_RATE,
-                                        new Base64Blob(bytes)
+                                        new Base64Blob(encodedBytes)
                                 );
                                 return httpService.upload(rec);
                             }

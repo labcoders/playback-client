@@ -18,7 +18,7 @@ import timber.log.Timber;
 /**
  * Class for wrapping Android's built-in encoding facilities with RxJava.
  */
-public class Encoder implements Observable.Operator<byte[], byte[]> {
+public class Encoder {
     MediaCodec codec;
 
     boolean hasError = false;
@@ -43,7 +43,7 @@ public class Encoder implements Observable.Operator<byte[], byte[]> {
         MediaFormat format = MediaFormat.createAudioFormat(MIME_TYPE, RecordingService.SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO);
         format.setInteger(MediaFormat.KEY_BIT_RATE, 128000);
         format.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC);
-        format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 10000);
+        format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 1000000);
         format.setInteger(MediaFormat.KEY_CHANNEL_COUNT, 1);
 
         codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
@@ -53,149 +53,84 @@ public class Encoder implements Observable.Operator<byte[], byte[]> {
         codecInitialized = true;
     }
 
-    @Override
-    public Subscriber<? super byte[]>
-    call(Subscriber<? super byte[]> subscriber) {
-        MediaCodec.Callback callback;
-        final CVar<Integer> bufferIndex = new CVar<Integer>();
+    public byte[] encode(byte[] inputBytes) {
+        if (!codecInitialized) {
+            initCodec();
+        }
+
+        int pointer = 0;
+
         ByteArrayOutputStream output = new ByteArrayOutputStream();
 
-        Subscriber sub = new Subscriber<byte[]>(subscriber) {
-            @Override
-            public void onCompleted() {
-                Timber.d("onComplete upstream to encoder called.");
-                codec.stop();
-                codec.release();
-                codecInitialized = false;
-                subscriber.onCompleted();
+        while (pointer < inputBytes.length) {
+            Timber.d("Current pointer position: " + pointer + ". Upstream byte array length: " + inputBytes.length);
+            int inIdx = -1;
+            int inc = 0;
+
+            while (inIdx < 0) {
+                inIdx = codec.dequeueInputBuffer(1000000);
+                if (inIdx >= 0) {
+                    ByteBuffer inBuffer = codec.getInputBuffer(inIdx);
+                    int capacity = inBuffer.capacity();
+                    inc = Math.min(inputBytes.length - pointer, capacity);
+
+                    inBuffer.put(inputBytes, pointer, inc);
+                    codec.queueInputBuffer(inIdx, 0, inc, 0, 0);
+                }
+                Timber.d("In index: %d", inIdx);
             }
 
-            @Override
-            public void onError(Throwable e) {
-                if(!subscriber.isUnsubscribed()) {
-                    subscriber.onError(e);
-                }
-            }
+            int outIdx = -1;
 
-            @Override
-            public void onNext(byte[] bytes) {
-                if(subscriber.isUnsubscribed()) {
-                    return;
-                }
-                if (!codecInitialized) {
-                    initCodec();
-                }
-                int pointer = 0;
-                long time = 0;
-                while (pointer < bytes.length) {
-                    Timber.d("Current pointer position: " + pointer  + ". Upstream byte array length: " + bytes.length);
-                    int inIdx = -1;
-                    int inc = 0;
+            while (outIdx < 0) {
+                final MediaCodec.BufferInfo info
+                        = new MediaCodec.BufferInfo();
+                outIdx = codec.dequeueOutputBuffer(info, 1000000);
+                Timber.d("out index: " + outIdx);
+                if (outIdx >= 0) {
+                    ByteBuffer outBuffer = codec.getOutputBuffer(outIdx);
+                    Timber.d("Received an outBuffer.");
+                    byte[] nextBuffer = new byte[outBuffer.remaining()];
+                    outBuffer.get(nextBuffer);
+                    Timber.d(
+                            "Converted to byte array with length %d",
+                            nextBuffer.length
+                    );
 
-                    while (inIdx < 0) {
-                        inIdx = codec.dequeueInputBuffer(1000000);
-                        if (inIdx >= 0) {
-                            ByteBuffer inBuffer = codec.getInputBuffer(inIdx);
-                            int capacity = inBuffer.capacity();
-                            inc = Math.min(bytes.length - pointer, capacity);
-                            time += inc / 2 /
-                                    (RecordingService.SAMPLE_RATE / 1.e6);
-
-                            inBuffer.put(bytes, pointer, inc);
-                            codec.queueInputBuffer(inIdx, 0, inc, time, 0);
-                        }
-                        Timber.d("In index: %d", inIdx);
+                    try {
+                        output.write(nextBuffer);
+                        Timber.d("Wrote %d bytes to output byte array stream.", nextBuffer.length);
+                    } catch (IOException e) {
+                        Timber.e("Could not write newly encoded audio to output byte array stream.");
+                        e.printStackTrace();
                     }
 
-                    int outIdx = -1;
-
-                    while (outIdx < 0) {
-                        final MediaCodec.BufferInfo info
-                                = new MediaCodec.BufferInfo();
-                        outIdx = codec.dequeueOutputBuffer(info, 1000000);
-                        Timber.d("out index: " + outIdx);
-                        if (outIdx >= 0) {
-                            ByteBuffer outBuffer = codec.getOutputBuffer(outIdx);
-                            Timber.d("Received an outBuffer.");
-                            byte[] nextBuffer = new byte[outBuffer.remaining()];
-                            outBuffer.get(nextBuffer);
-                            Timber.d(
-                                    "Converted to byte array with length %d",
-                                    nextBuffer.length
-                            );
-                            subscriber.onNext(nextBuffer);
-                            Timber.d("Returned from onNext of subscriber.");
-                            codec.releaseOutputBuffer(outIdx, 0);
-                            Timber.d("Dequeued output buffer.");
-                        } else {
-                            switch (outIdx) {
-                                case -1:
-                                    Timber.e("Timed out while waiting for output buffer.");
-                                    break;
-                                case -2:
-                                    Timber.d("Output format changed");
-                                    break;
-                                case -3:
-                                    Timber.d("Output buffers changed (DEPRECATED).");
-                                    break;
-                                default:
-                                    Timber.e("THE END IS NIGH");
-                            }
-                        }
+                    codec.releaseOutputBuffer(outIdx, 0);
+                    Timber.d("Dequeued output buffer.");
+                } else {
+                    switch (outIdx) {
+                        case -1:
+                            Timber.e("Timed out while waiting for output buffer.");
+                            break;
+                        case -2:
+                            Timber.d("Output format changed");
+                            break;
+                        case -3:
+                            Timber.d("Output buffers changed (DEPRECATED).");
+                            break;
+                        default:
+                            Timber.e("THE END IS NIGH");
                     }
-
-                    pointer += inc;
                 }
-                Timber.d("Finished writing %d to observer", bytes.length);
             }
-        };
 
-//        callback = new MediaCodec.Callback() {
-//            @Override
-//            public void onInputBufferAvailable(
-//                    MediaCodec codec, int index) {
-//                try {
-//                    Timber.d("Codec thread ID: " + String.valueOf(Thread.currentThread()));
-//                    bufferIndex.write(index);
-//                }
-//                catch(InterruptedException e) {
-//                    Timber.e("HOLY SHIT");
-//                    hasError = true;
-//                    error = e;
-//                }
-//            }
-//
-//            @Override
-//            public void onOutputBufferAvailable(
-//                    MediaCodec codec,
-//                    int index,
-//                    MediaCodec.BufferInfo info) {
-//                if (0 != (info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM)) {
-//                    subscriber.onNext(codec.getOutputBuffer(index).array());
-//                    subscriber.onCompleted();
-//                    codec.stop();
-//                } else {
-//                    subscriber.onNext(codec.getOutputBuffer(index).array());
-//                }
-//            }
-//
-//            @Override
-//            public void onError(
-//                    MediaCodec codec,
-//                    MediaCodec.CodecException e) {
-//
-//            }
-//
-//            @Override
-//            public void onOutputFormatChanged(
-//                    MediaCodec codec,
-//                    MediaFormat format) {
-//
-//            }
-//        };
-//
-//        codec.setCallback(callback);
+            pointer += inc;
+        }
+        codec.stop();
+        codec.release();
+        codecInitialized = false;
 
-        return sub;
+        Timber.d("Completed encoding.");
+        return output.toByteArray();
     }
 }
