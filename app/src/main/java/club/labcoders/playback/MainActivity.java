@@ -95,14 +95,32 @@ public class MainActivity extends AppCompatActivity {
             ByteArrayOutputStream compressedAudio = new ByteArrayOutputStream();
 
             Observable.just(rawAudio)
-                    .lift(new Encoder())
-                    .observeOn(Schedulers.io())
-                    .subscribe(
+                    //.lift(new Encoder())
+                    .flatMap(
                             bytes -> {
-                                Timber.d(
-                                        "Subscriber got bytes of length %d",
+                                final AudioRecording rec = new AudioRecording(
+                                        DateTime.now(),
                                         bytes.length
+                                                / 2.0
+                                                / RecordingService.SAMPLE_RATE,
+                                        new Base64Blob(bytes)
                                 );
+                                return httpService.upload(rec);
+                            }
+                    )
+                    .subscribeOn(Schedulers.io())
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .subscribe(
+                            id -> {
+                                Timber.d("Uploaded raw with id %d", id);
+                                Toast.makeText(
+                                        MainActivity.this,
+                                        String.format(
+                                                "Uploaded row with id %d",
+                                                id
+                                        ),
+                                        Toast.LENGTH_LONG
+                                ).show();
                             }
                     );
 
