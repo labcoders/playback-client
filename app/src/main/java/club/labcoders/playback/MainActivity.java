@@ -83,8 +83,6 @@ public class MainActivity extends AppCompatActivity {
         } else {
             short[] shorts = recordingService.getBufferedAudio();
 
-            Encoder enc = new Encoder();
-
             // Calculate length of audio
             length = shorts.length / RecordingService.SAMPLE_RATE;
 
@@ -96,64 +94,111 @@ public class MainActivity extends AppCompatActivity {
             byte[] rawAudio = buf.array();
             ByteArrayOutputStream compressedAudio = new ByteArrayOutputStream();
 
-            CVar<Void> signal = new CVar();
-
             Observable.just(rawAudio)
-                    .lift(enc)
-                    .subscribe(compressed -> {
-                            try {
-                                Timber.d("Received encoded audio from upstream");
-                                compressedAudio.write(compressed);
-                            } catch (IOException e) {
-                                Timber.e("Fuck");
-                                e.printStackTrace();
+                    .lift(new Encoder())
+                    .observeOn(Schedulers.io())
+                    .subscribe(
+                            bytes -> {
+                                Timber.d(
+                                        "Subscriber got bytes of length %d",
+                                        bytes.length
+                                );
                             }
-                        },
-                        err -> {
-                            Timber.e("Error while compressing audio. Error was: " + err.toString());
-                            err.printStackTrace();
-                        },
-                            () -> {
-                                // Construct blob.
-                                Timber.d("Finished encoding audio. Creating AudioRecording now.");
-                                Base64Blob blob = new Base64Blob(compressedAudio.toByteArray());
+                    );
 
-                                // Get current date
-                                DateTime date = DateTime.now();
-
-                                AudioRecording recording;
-                                if (canUseFineLocation) {
-                                    LocationManager lcm = (LocationManager) this.getSystemService(Context.LOCATION_SERVICE);
-
-                                    //noinspection ResourceType
-                                    // Get location if we can.
-                                    Location loc = lcm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
-
-
-                                    if (loc == null) {
-                                        recording = new AudioRecording(date, length, blob);
-                                    } else {
-                                        GeographicalPosition g = new GeographicalPosition(loc.getLatitude(), loc.getLongitude());
-
-                                        recording = new AudioRecording(date, length, blob, g);
-                                    }
-                                } else {
-                                    Timber.d("No location permissions. Creating AudioRecording sans location.");
-                                    recording = new AudioRecording(date, length, blob);
-                                }
-
-                                Timber.d("Starting upload process now.");
-                                httpService.upload(recording)
-                                        .subscribe(
-                                            uploadID -> {
-                                                Timber.d("Successfully uploaded recording with id " + uploadID);
-                                                Toast.makeText(this, "Successfully uploaded. Id is : " + uploadID + ".", Toast.LENGTH_SHORT).show();
-                                            },
-                                            err -> {
-                                                Timber.e("Recording upload failed. Error was: " + err.toString());
-                                                err.printStackTrace();
-                                        });
-                    });
+//            Observable.just(rawAudio)
+//                    .lift(new Encoder())
+//                    .doOnNext(
+//                            bytes -> Timber.d("Got %d bytes.", bytes.length)
+//                    )
+//                    .subscribe(compressed -> {
+//                                try {
+//                                    Timber.d("Received encoded audio from " +
+//                                            "upstream");
+//                                    compressedAudio.write(compressed);
+//                                    Timber.d("Wrote %d bytes.", compressed
+//                                            .length);
+//                                } catch (IOException e) {
+//                                    Timber.e("Fuck");
+//                                    e.printStackTrace();
+//                                }
+//                            },
+//                            err -> {
+//                                Timber.e("Error while compressing audio. " +
+//                                        "Error was: %s", err.toString());
+//                                err.printStackTrace();
+//                            },
+//                            () -> {
+//                                // Construct blob.
+//                                Timber.d("Finished encoding audio. Creating " +
+//                                        "AudioRecording now.");
+//                                Base64Blob blob = new Base64Blob
+//                                        (compressedAudio.toByteArray());
+//
+//                                // Get current date
+//                                DateTime date = DateTime.now();
+//
+//                                AudioRecording recording;
+//                                if (canUseFineLocation) {
+//                                    LocationManager lcm = (LocationManager)
+//                                            this.getSystemService(Context
+//                                                    .LOCATION_SERVICE);
+//
+//                                    //noinspection ResourceType
+//                                    // Get location if we can.
+//                                    Location loc = lcm.getLastKnownLocation
+//                                            (LocationManager.NETWORK_PROVIDER);
+//
+//
+//                                    if (loc == null) {
+//                                        recording = new AudioRecording(
+//                                                date,
+//                                                length,
+//                                                blob
+//                                        );
+//                                    }
+//                                    else {
+//                                        GeographicalPosition g = new
+//                                                GeographicalPosition(
+//                                                loc.getLatitude(),
+//                                                loc.getLongitude()
+//                                        );
+//
+//                                        recording = new AudioRecording(date,
+//                                                length, blob, g);
+//                                    }
+//                                }
+//                                else {
+//                                    Timber.d("No location permissions. " +
+//                                            "Creating AudioRecording sans " +
+//                                            "location.");
+//                                    recording = new AudioRecording(date,
+//                                            length, blob);
+//                                }
+//
+//                                Timber.d("Starting upload process now.");
+//                                httpService.upload(recording)
+//                                        .subscribe(
+//                                                uploadID -> {
+//                                                    Timber.d("Successfully " +
+//                                                            "uploaded " +
+//                                                            "recording with " +
+//                                                            "id " + uploadID);
+//                                                    Toast.makeText(this,
+//                                                            "Successfully " +
+//                                                                    "uploaded" +
+//                                                                    ". Id is " +
+//                                                                    ": " +
+//                                                                    uploadID
+//                                                                    + ".",
+//                                                            Toast.LENGTH_SHORT)
+//                                                            .show();
+//                                                },
+//                                                err -> {
+//                                                    Timber.e("Recording upload failed. Error was: " + err.toString());
+//                                                    err.printStackTrace();
+//                                                });
+//                            });
         }
     }
 

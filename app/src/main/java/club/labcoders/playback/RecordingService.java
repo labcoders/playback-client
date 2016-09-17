@@ -140,6 +140,7 @@ public class RecordingService extends Service {
         );
         chunkBufferSize = bufferSize / 2;
         maxAudioBufferQueueLength = snapshotLengthSamples / chunkBufferSize;
+        Timber.d("Max ABQ length: %d", maxAudioBufferQueueLength);
 
         audioStream = Observable.create(subscriber -> {
             initAudioRecord();
@@ -158,6 +159,7 @@ public class RecordingService extends Service {
                 subscriber.onNext(audioBuffer);
             }
 
+            Timber.d("Recording stream ended.");
             subscriber.onCompleted();
         });
 
@@ -247,7 +249,10 @@ public class RecordingService extends Service {
         final Subscription producer = audioStream
                 .subscribeOn(Schedulers.io())
                 .observeOn(Schedulers.io())
-                .subscribe(audioBufferQueue::add);
+                .subscribe(shorts -> {
+                    audioBufferQueue.add(shorts);
+                    audioBufferQueueLength.incrementAndGet();
+                });
         subscriptions.add(producer);
 
         final Observable<Void> gcTimer = Observable.create(subscriber -> {
@@ -299,6 +304,7 @@ public class RecordingService extends Service {
         subscriptions.unsubscribe();
         audioRecord.stop();
         audioRecord.release();
+        Timber.d("RecordingService destroyed.");
     }
 
     @Override

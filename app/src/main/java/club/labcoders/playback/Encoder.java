@@ -30,6 +30,7 @@ public class Encoder implements Observable.Operator<byte[], byte[]> {
 
     public Encoder() {
         codecInitialized = false;
+        Timber.d("Created Encoder.");
     }
 
     private void initCodec() {
@@ -48,6 +49,7 @@ public class Encoder implements Observable.Operator<byte[], byte[]> {
         codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
         codec.start();
 
+        Timber.d("Initialized codec.");
         codecInitialized = true;
     }
 
@@ -77,13 +79,14 @@ public class Encoder implements Observable.Operator<byte[], byte[]> {
 
             @Override
             public void onNext(byte[] bytes) {
-                if (!codecInitialized) {
-                    initCodec();
-                }
                 if(subscriber.isUnsubscribed()) {
                     return;
                 }
+                if (!codecInitialized) {
+                    initCodec();
+                }
                 int pointer = 0;
+                long time = 0;
                 while (pointer < bytes.length) {
                     Timber.d("Current pointer position: " + pointer  + ". Upstream byte array length: " + bytes.length);
                     int inIdx = -1;
@@ -95,24 +98,35 @@ public class Encoder implements Observable.Operator<byte[], byte[]> {
                             ByteBuffer inBuffer = codec.getInputBuffer(inIdx);
                             int capacity = inBuffer.capacity();
                             inc = Math.min(bytes.length - pointer, capacity);
+                            time += inc / 2 /
+                                    (RecordingService.SAMPLE_RATE / 1.e6);
 
                             inBuffer.put(bytes, pointer, inc);
-                            codec.queueInputBuffer(inIdx, 0, inc, 0, 0);
+                            codec.queueInputBuffer(inIdx, 0, inc, time, 0);
                         }
-                        Timber.d("In index: " + inIdx);
+                        Timber.d("In index: %d", inIdx);
                     }
 
                     int outIdx = -1;
 
                     while (outIdx < 0) {
-                        outIdx = codec.dequeueOutputBuffer(new MediaCodec.BufferInfo(), 1000000);
+                        final MediaCodec.BufferInfo info
+                                = new MediaCodec.BufferInfo();
+                        outIdx = codec.dequeueOutputBuffer(info, 1000000);
                         Timber.d("out index: " + outIdx);
                         if (outIdx >= 0) {
                             ByteBuffer outBuffer = codec.getOutputBuffer(outIdx);
                             Timber.d("Received an outBuffer.");
                             byte[] nextBuffer = new byte[outBuffer.remaining()];
                             outBuffer.get(nextBuffer);
+                            Timber.d(
+                                    "Converted to byte array with length %d",
+                                    nextBuffer.length
+                            );
                             subscriber.onNext(nextBuffer);
+                            Timber.d("Returned from onNext of subscriber.");
+                            codec.releaseOutputBuffer(outIdx, 0);
+                            Timber.d("Dequeued output buffer.");
                         } else {
                             switch (outIdx) {
                                 case -1:
@@ -129,9 +143,10 @@ public class Encoder implements Observable.Operator<byte[], byte[]> {
                             }
                         }
                     }
+
                     pointer += inc;
                 }
-                Timber.d("Finished writing " + bytes.length + " to observer.");
+                Timber.d("Finished writing %d to observer", bytes.length);
             }
         };
 
