@@ -79,8 +79,8 @@ public class MainActivity extends AppCompatActivity {
             Encoder enc = new Encoder();
 
             Observable.just(rawAudio)
-//                    .lift(enc)
-//                    .lift(new MonoMuxingOperator(enc))
+                    .lift(enc)
+                    .lift(new MonoMuxingOperator(enc))
                     .flatMap(
                             bytes -> {
                                 Timber.d(

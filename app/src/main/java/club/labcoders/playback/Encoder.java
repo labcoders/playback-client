@@ -29,6 +29,7 @@ public class Encoder implements Observable.Operator<EncodedOutput, byte[]> {
     private boolean codecInitialized;
 
     public final static String MIME_TYPE = MediaFormat.MIMETYPE_AUDIO_AAC;
+    private boolean sendEOS;
 
     public Encoder() {
         this(
@@ -39,6 +40,7 @@ public class Encoder implements Observable.Operator<EncodedOutput, byte[]> {
 
     public Encoder(int inputSampleRate, int channelConfig) {
         codecInitialized = false;
+        sendEOS = false;
         this.inputSampleRate = inputSampleRate;
         this.channelConfig = channelConfig;
         Timber.d("Created Encoder.");
@@ -78,15 +80,14 @@ public class Encoder implements Observable.Operator<EncodedOutput, byte[]> {
     @Override
     public Subscriber<? super byte[]>
     call(Subscriber<? super EncodedOutput> subscriber) {
-        MediaCodec.Callback callback;
-        final CVar<Integer> bufferIndex = new CVar<Integer>();
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
 
         Subscriber sub = new Subscriber<byte[]>(subscriber) {
             @Override
             public void onCompleted() {
                 Timber.d("onComplete upstream to encoder called.");
-                MediaFormat f = codec.getOutputFormat();
+                sendEOS = true;
+                onNext(new byte[0]);
+
                 codec.stop();
                 codec.release();
                 codecInitialized = false;
@@ -130,7 +131,11 @@ public class Encoder implements Observable.Operator<EncodedOutput, byte[]> {
 
                             inBuffer.put(bytes, pointer, inc);
                             pointer += inc;
-                            codec.queueInputBuffer(inIdx, 0, inc, 0, 0);
+                            if (sendEOS) {
+                                codec.queueInputBuffer(inIdx, 0, inc, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
+                            } else {
+                                codec.queueInputBuffer(inIdx, 0, inc, 0, 0);
+                            }
                         }
                         getInputBufferTries -= 1;
                     }
@@ -169,7 +174,11 @@ public class Encoder implements Observable.Operator<EncodedOutput, byte[]> {
                         }
                     }
                 }
-                Timber.d("Encoded %d bytes, and wrote %d bytes to observer.", bytes.length, finalSize);
+                if (sendEOS) {
+                    Timber.d("Sent EOS.");
+                } else {
+                    Timber.d("Encoded %d bytes, and wrote %d bytes to observer.", bytes.length, finalSize);
+                }
             }
         };
 

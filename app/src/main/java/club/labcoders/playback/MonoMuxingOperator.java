@@ -102,7 +102,6 @@ public class MonoMuxingOperator implements Observable.Operator<byte[], EncodedOu
 
                 try {
                     mux.writeSampleData(trackID, ByteBuffer.wrap(encoded.byteArray), encoded.bufferInfo);
-                    Timber.d("Wrote to mux.");
                 } catch (Exception e) {
                     onError(e);
                 }
