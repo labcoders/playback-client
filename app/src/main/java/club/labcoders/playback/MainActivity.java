@@ -92,7 +92,6 @@ public class MainActivity extends AppCompatActivity {
             }
 
             byte[] rawAudio = buf.array();
-            ByteArrayOutputStream compressedAudio = new ByteArrayOutputStream();
 
             Observable.just(rawAudio)
                     .lift(new Encoder())
@@ -124,9 +123,7 @@ public class MainActivity extends AppCompatActivity {
                                 Toast.makeText(
                                         MainActivity.this,
                                         String.format(
-                                                "Uploaded row " +
-                                                        "with id " +
-                                                        "%d",
+                                                "Uploaded row with id %d",
                                                 id
                                         ),
                                         Toast.LENGTH_LONG
@@ -134,8 +131,7 @@ public class MainActivity extends AppCompatActivity {
                                         .show();
                             },
                             err -> {
-                                Timber.e("Failed to upload " +
-                                        "recording.");
+                                Timber.e("Failed to upload recording.");
                                 err.printStackTrace();
                             }
                     );
