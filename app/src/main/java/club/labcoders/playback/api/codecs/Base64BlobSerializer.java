@@ -16,6 +16,7 @@ public class Base64BlobSerializer implements JsonSerializer<Base64Blob> {
     public JsonElement serialize(Base64Blob src, Type typeOfSrc, JsonSerializationContext context) {
         return new JsonPrimitive(
                 Base64.encodeToString(src.getBytes(), Base64.DEFAULT)
+                        .replaceAll("\n", "")
         );
     }
 }
