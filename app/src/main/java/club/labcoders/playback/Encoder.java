@@ -86,8 +86,8 @@ public class Encoder implements Observable.Operator<byte[], byte[]> {
                     initCodec();
                 }
                 int pointer = 0;
+                int finalSize = 0;
                 while (pointer < bytes.length) {
-                    Timber.d("Current pointer position: " + pointer  + ". Upstream byte array length: " + bytes.length);
                     int inIdx = -1;
                     int inc = 0;
 
@@ -108,31 +108,22 @@ public class Encoder implements Observable.Operator<byte[], byte[]> {
                             codec.queueInputBuffer(inIdx, 0, inc, 0, 0);
                         }
                         getInputBufferTries -= 1;
-                        Timber.d("In index: %d", inIdx);
                     }
-                    getInputBufferTries = 3;
 
-                    int outIdx = -1;
+                    int outIdx;
 
                     int getOutputBufferTries = 3;
-                    while (outIdx < 0 && getOutputBufferTries > 0) {
+                    while (getOutputBufferTries > 0) {
                         final MediaCodec.BufferInfo info
                                 = new MediaCodec.BufferInfo();
                         outIdx = codec.dequeueOutputBuffer(info, 1000);
-                        Timber.d("out index: " + outIdx);
                         if (outIdx >= 0) {
                             ByteBuffer outBuffer = codec.getOutputBuffer(outIdx);
-                            Timber.d("Received an outBuffer.");
+                            finalSize += outBuffer.remaining();
                             byte[] nextBuffer = new byte[outBuffer.remaining()];
                             outBuffer.get(nextBuffer);
-                            Timber.d(
-                                    "Converted to byte array with length %d",
-                                    nextBuffer.length
-                            );
                             subscriber.onNext(nextBuffer);
-                            Timber.d("Returned from onNext of subscriber.");
                             codec.releaseOutputBuffer(outIdx, 0);
-                            Timber.d("Dequeued output buffer.");
                         } else {
                             switch (outIdx) {
                                 case -1:
@@ -150,9 +141,8 @@ public class Encoder implements Observable.Operator<byte[], byte[]> {
                             getOutputBufferTries -= 1;
                         }
                     }
-                    getOutputBufferTries = 3;
                 }
-                Timber.d("Finished writing %d to observer", bytes.length);
+                Timber.d("Encoded %d bytes, and wrote %d bytes to observer.", bytes.length, finalSize);
             }
         };
 
