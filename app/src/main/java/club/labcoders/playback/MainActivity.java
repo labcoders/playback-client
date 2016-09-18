@@ -69,9 +69,6 @@ public class MainActivity extends AppCompatActivity {
         } else {
             short[] shorts = recordingService.getBufferedAudio();
 
-            // Calculate length of audio
-            length = shorts.length / AudioManager.getInstance().getSampleRate();
-
             ByteBuffer buf = ByteBuffer.allocate(shorts.length * 2);
             for (short s : shorts) {
                 buf.putShort(s);
@@ -82,8 +79,8 @@ public class MainActivity extends AppCompatActivity {
             Encoder enc = new Encoder();
 
             Observable.just(rawAudio)
-                    .lift(enc)
-                    .lift(new MonoMuxingOperator(enc))
+//                    .lift(enc)
+//                    .lift(new MonoMuxingOperator(enc))
                     .flatMap(
                             bytes -> {
                                 Timber.d(

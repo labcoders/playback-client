@@ -82,6 +82,24 @@ public class AudioManager {
         );
     }
 
+    public int getBytesPerSample() {
+        switch(audioFormat) {
+            case AudioFormat.ENCODING_PCM_8BIT:
+                return 1;
+            case AudioFormat.ENCODING_PCM_16BIT:
+                return 2;
+            case AudioFormat.ENCODING_PCM_FLOAT:
+                return 4;
+            default:
+                throw new RuntimeException(
+                        String.format(
+                                "Unknown audio format %d",
+                                audioFormat
+                        )
+                );
+        }
+    }
+
     private static AudioManager makeInstance() {
         int bufferSize = 0;
         AudioRecord audioRecord = null;

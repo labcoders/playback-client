@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.media.AudioRecord;
 import android.os.Binder;
 
+import java.nio.ShortBuffer;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -151,10 +152,53 @@ public class RecordingService extends Service {
             audioRecord.startRecording();
             while (audioRecord.getRecordingState()
                     == AudioRecord.RECORDSTATE_RECORDING) {
-                final int bufferSize = getAudioManager().getBufferSize();
-                final short[] audioBuffer = new short[bufferSize];
-                audioRecord.read(audioBuffer, 0, audioBuffer.length);
-                subscriber.onNext(audioBuffer);
+                final short[] audioBuffer = new short[chunkBufferSize];
+                final int readOut = audioRecord.read(
+                        audioBuffer,
+                        0,
+                        audioBuffer.length
+                );
+                switch(readOut) {
+                    case AudioRecord.ERROR_INVALID_OPERATION:
+                        Timber.e(
+                                "Failed to read: AudioRecord not initialized."
+                        );
+                        subscriber.onError(
+                                new RuntimeException(
+                                        "AudioRecord not initialized"
+                                )
+                        );
+                        return;
+                    case AudioRecord.ERROR_DEAD_OBJECT:
+                        Timber.e(
+                                "Failed to read: AudioRecord died."
+                        );
+                        subscriber.onError(
+                                new RuntimeException("AudioRecord died.")
+                        );
+                        return;
+                    case AudioRecord.ERROR_BAD_VALUE:
+                        Timber.e(
+                                "Failed to read: bad values."
+                        );
+                        subscriber.onError(
+                                new RuntimeException("AudioRecord bad values")
+                        );
+                        return;
+                    case AudioRecord.ERROR:
+                        Timber.e(
+                                "Failed to read: generic error."
+                        );
+                        subscriber.onError(
+                                new RuntimeException(
+                                        "AudioRecord generic error."
+                                )
+                        );
+                        return;
+                }
+                final short[] finalBuffer = new short[readOut];
+                System.arraycopy(audioBuffer, 0, finalBuffer, 0, readOut);
+                subscriber.onNext(finalBuffer);
             }
 
             Timber.d("Recording stream ended.");
@@ -183,22 +227,25 @@ public class RecordingService extends Service {
      * @return A single array with the merged contents of all the linked
      * buffers in the audioBufferQueue.
      */
-    private short[] linearizeQueue(final int maxMergedBuffers) {
-        short[] result = new short[maxMergedBuffers * chunkBufferSize];
-        int processedBufferCount = 0;
+    private short[] linearizeQueue() {
         Timber.d("Starting audio buffer queue linearization.");
+        ShortBuffer result = null;
+        int processedShorts = 0;
         try {
             Timber.d("Locking audio buffer queue.");
             queueLock.lock();
-            final long startTime = System.nanoTime();
             Timber.d("Doing pre-linearization GC.");
             queueGc();
+            final int bufCount = audioBufferQueueLength.get();
+            result = ShortBuffer.allocate(bufCount * chunkBufferSize);
+            int processedBufferCount = 0;
+            final long startTime = System.nanoTime();
             for (short[] buffer : audioBufferQueue) {
-                if (processedBufferCount == maxMergedBuffers)
+                if (processedBufferCount >= bufCount)
                     break;
-                final int writeOffset = processedBufferCount * chunkBufferSize;
-                System.arraycopy(buffer, 0, result, writeOffset,
-                        chunkBufferSize);
+                result.put(buffer);
+                processedBufferCount++;
+                processedShorts += buffer.length;
             }
             final long endTime = System.nanoTime();
             final long delta = (endTime - startTime) / (long) 1e3; // microseconds
@@ -209,7 +256,15 @@ public class RecordingService extends Service {
             if (queueLock.isHeldByCurrentThread())
                 queueLock.unlock();
         }
-        return result;
+        final short[] finalResult = new short[processedShorts];
+        System.arraycopy(
+                result.array(),
+                0,
+                finalResult,
+                0,
+                finalResult.length
+        );
+        return finalResult;
     }
 
     /**
@@ -224,7 +279,7 @@ public class RecordingService extends Service {
         // audio with length snapshotLengthSeconds; dividing by chunkBufferSize
         // gives us the number of buffers we need to pop to get a sample
         // array whose represented audio has that length in seconds.
-        return linearizeQueue(maxAudioBufferQueueLength);
+        return linearizeQueue();
     }
 
     @Override
