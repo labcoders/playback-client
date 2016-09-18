@@ -125,7 +125,8 @@ public class RecordingService extends Service {
         snapshotLengthSeconds = DEFAULT_SNAPSHOT_LENGTH;
         snapshotLengthSamples
                 = snapshotLengthSeconds * getAudioManager().getSampleRate();
-        chunkBufferSize = getAudioManager().getBufferSize() / 2;
+        chunkBufferSize
+                = getAudioManager().getBufferSize() / getAudioManager().getBytesPerSample();
         maxAudioBufferQueueLength
                 = snapshotLengthSamples / chunkBufferSize;
 

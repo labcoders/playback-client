@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.media.AudioRecord;
+import android.os.Environment;
 import android.os.IBinder;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
@@ -18,6 +19,10 @@ import android.widget.Toast;
 import org.joda.time.DateTime;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 
 import butterknife.BindView;
@@ -88,10 +93,23 @@ public class MainActivity extends AppCompatActivity {
                                         bytes.length
                                 );
 
+                                final String path
+                                        = Environment.getExternalStorageDirectory()
+                                        + "/temp.pcm";
+                                final File f = new File(path);
+                                try (final FileOutputStream fos
+                                             = new FileOutputStream(f)) {
+                                    fos.write(bytes);
+                                } catch (FileNotFoundException e) {
+                                    e.printStackTrace();
+                                } catch (IOException e) {
+                                    e.printStackTrace();
+                                }
+
                                 final AudioRecording rec = new AudioRecording(
                                         DateTime.now(),
                                         rawAudio.length
-                                                / 2.0
+                                                / AudioManager.getInstance().getBytesPerSample()
                                                 / AudioManager.getInstance().getSampleRate(),
                                         new Base64Blob(bytes)
                                 );

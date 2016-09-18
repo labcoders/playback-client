@@ -117,7 +117,7 @@ public class AudioManager {
                             audioFormat
                     );
                     audioRecord = new AudioRecord(
-                            MediaRecorder.AudioSource.MIC,
+                            MediaRecorder.AudioSource.VOICE_COMMUNICATION,
                             sampleRate,
                             channelConfig,
                             audioFormat,
