@@ -94,10 +94,8 @@ public class MainActivity extends AppCompatActivity {
                                         bytes.length
                                 );
 
-                                final String path
-                                        = Environment.getExternalStorageDirectory()
-                                        + "/temp.pcm";
-                                final File f = new File(path);
+                                final File f = new File(getFilesDir(), "temp.pmc");
+                                Timber.d("Dumping to %s.", f.getAbsolutePath());
                                 try (final FileOutputStream fos
                                              = new FileOutputStream(f)) {
                                     fos.write(bytes);
