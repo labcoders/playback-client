@@ -5,9 +5,6 @@ import android.support.annotation.Nullable;
 import android.support.design.widget.FloatingActionButton;
 import android.support.design.widget.Snackbar;
 import android.support.v7.app.AppCompatActivity;
-import android.support.v7.widget.Toolbar;
-import android.view.View;
-import android.app.Activity;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
@@ -24,17 +21,17 @@ import butterknife.OnClick;
 import club.labcoders.playback.api.ApiManager;
 import club.labcoders.playback.api.AuthApi;
 import club.labcoders.playback.api.AuthManager;
+import club.labcoders.playback.api.models.AuthPing;
+import club.labcoders.playback.api.models.AuthenticationRequest;
 import rx.android.schedulers.AndroidSchedulers;
 import rx.schedulers.Schedulers;
+import timber.log.Timber;
 
-public class AuthActivity extends Activity {
-
-
-    @BindView(R.id.username)
+public class AuthActivity extends AppCompatActivity {
+    @BindView(R.id.usernameField)
     EditText username;
 
-    @Nullable
-    @BindView(R.id.password)
+    @BindView(R.id.passwordField)
     EditText password;
 
     @BindView(R.id.loginButton)
@@ -46,6 +43,7 @@ public class AuthActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_auth);
 
         setContentView(R.layout.activity_auth);
 
@@ -65,11 +63,15 @@ public class AuthActivity extends Activity {
         // If not, stay on login page and continue
         // rendering UI.
         if (cur.getCount() > 0) {
-            String token = cur.getString(cur.getColumnIndex("token"));
-            api.ping(token)
-                    .subscribeOn(AndroidSchedulers.mainThread())
+            cur.moveToNext();
+            final String token = cur.getString(cur.getColumnIndex("token"));
+            api.ping(new AuthPing(token))
+                    .subscribeOn(Schedulers.io())
+                    .observeOn(AndroidSchedulers.mainThread())
                     .subscribe(pong -> {
                         if (pong.isValid()) {
+                            ApiManager.initialize(token);
+                            Timber.d("Initialized ApiManager");
                             startActivity(new Intent(this, MainActivity.class));
                             finish();
                         }
@@ -79,10 +81,13 @@ public class AuthActivity extends Activity {
 
     @OnClick(R.id.loginButton)
     public void login() {
-        api.auth(username.toString(), password.toString())
-                .observeOn(Schedulers.io())
+        final String username = this.username.getText().toString();
+        final String password = this.password.getText().toString();
+        api.auth(new AuthenticationRequest(username, password))
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribeOn(Schedulers.io())
                 .subscribe(authResult -> {
-                    if (authResult.wasSuccess()) {
+                    if (authResult.getSuccess()) {
                         ContentValues vals = new ContentValues(2);
                         vals.put("id", 1);
                         vals.put("token", authResult.getToken());
@@ -94,8 +99,7 @@ public class AuthActivity extends Activity {
                         finish();
                     } else {
                         Toast.makeText(this, "Failed to login.", Toast.LENGTH_SHORT);
-                        username.setText("");
-                        password.setText("");
+                        this.password.setText("");
                     }
                 });
     }

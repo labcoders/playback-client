@@ -13,9 +13,11 @@ public class AuthHeaderInterceptor implements Interceptor {
     public Response intercept(final Chain chain) throws IOException {
         Request orig = chain.request();
         Request newReq = orig.newBuilder()
-                .addHeader("token", sessionToken)
+                .addHeader("Authorization", "oToke " + sessionToken)
                 .method(orig.method(), orig.body())
                 .build();
+
+
 
         return chain.proceed(newReq);
     }

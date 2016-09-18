@@ -17,7 +17,7 @@ public class AuthManager {
     private static Retrofit authAdapter;
     private static AuthApi auth;
 
-    private final String BASE_URL = "https://port-8083.jerrington.me";
+    private final String BASE_URL = Url.BASE_URL;
 
     public static void initialize() {
         if (!(instance == null)) {

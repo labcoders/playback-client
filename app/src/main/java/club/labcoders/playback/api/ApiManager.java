@@ -20,7 +20,7 @@ import timber.log.Timber;
  * Singleton class for holding global API settings.
  */
 public class ApiManager {
-    private static final String BASE_URL = "https://tunnel-8084.jerrington.me";
+    private static final String BASE_URL = Url.BASE_URL;
 
     private static ApiManager instance;
 

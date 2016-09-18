@@ -105,8 +105,8 @@ public class MainActivity extends AppCompatActivity {
                                 }
                             }
                     )
-                    .lift(enc)
-                    .map(encodedOutput -> encodedOutput.byteArray)
+//                    .lift(enc)
+//                    .map(encodedOutput -> encodedOutput.byteArray)
                     .lift(new BufferOperator())
 //                    .lift(new MonoMuxingOperator(enc))
                     .flatMap(

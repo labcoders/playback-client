@@ -35,7 +35,7 @@ public class RecordingService extends Service {
      * <p>
      * TODO: make this a configurable parameter of the application.
      */
-    public static final int DEFAULT_SNAPSHOT_LENGTH = 10;
+    public static final int DEFAULT_SNAPSHOT_LENGTH = 60;
 
     /**
      * The queue used internally to hold buffers emitted by the
