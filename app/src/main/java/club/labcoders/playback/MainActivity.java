@@ -84,7 +84,7 @@ public class MainActivity extends AppCompatActivity {
             short[] shorts = recordingService.getBufferedAudio();
 
             // Calculate length of audio
-            length = shorts.length / RecordingService.SAMPLE_RATE;
+            length = shorts.length / AudioManager.getInstance().getSampleRate();
 
             ByteBuffer buf = ByteBuffer.allocate(shorts.length * 2);
             for (short s : shorts) {
@@ -99,6 +99,10 @@ public class MainActivity extends AppCompatActivity {
                     .doOnNext(
                             bytes -> {
                                 try {
+                                    Timber.d(
+                                            "Got %d bytes from upstream %d",
+                                            bytes.length
+                                    );
                                     compressedAudio.write(bytes);
                                 } catch (IOException e) {
                                     Timber.e("Could not successfully write %d bytes to byte array output stream.");
@@ -120,7 +124,7 @@ public class MainActivity extends AppCompatActivity {
                                     DateTime.now(),
                                     outputBytes.length
                                             / 2.0
-                                            / RecordingService.SAMPLE_RATE,
+                                            / AudioManager.getInstance().getSampleRate(),
                                     new Base64Blob(outputBytes)
                             );
                             httpService.upload(rec)

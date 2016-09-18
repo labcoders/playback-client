@@ -2,9 +2,7 @@ package club.labcoders.playback;
 
 import android.app.Service;
 import android.content.Intent;
-import android.media.AudioFormat;
 import android.media.AudioRecord;
-import android.media.MediaRecorder;
 import android.os.Binder;
 
 import java.util.Queue;
@@ -35,53 +33,7 @@ public class RecordingService extends Service {
      * <p>
      * TODO: make this a configurable parameter of the application.
      */
-    public static final int DEFAULT_CHUNK_LENGTH = 10;
-    AudioRecord audioRecord;
-
-    /**
-     * Sample rate of the audio recording.
-     * <p>
-     * 44.1kHz 16-bit PCM is a standard supported by all Android devices.
-     */
-    public static final int SAMPLE_RATE = 44100;
-
-    /**
-     * The size of the audio buffers used internally by Android in our audio
-     * recorder.
-     */
-    public final int bufferSize;
-
-    /**
-     * The size of the buffer that we fill when polling the microphone.
-     * <p>
-     * Remark: per the docs, this must be *smaller* than {@link #bufferSize}!
-     */
-    public final int chunkBufferSize;
-
-    /**
-     * A hot observable connected to the microphone. This observable obtains
-     * a value when the service is started. It emits buffers containing the
-     * raw samples read from the microphone.
-     */
-    public final Observable<short[]> audioStream;
-
-    /**
-     * A hot observable connected to the microphone. It emits the recording
-     * state of the microphone every {@link #STATE_POLL_PERIOD} milliseconds.
-     */
-    public final Observable<Integer> recordingState;
-
-    /**
-     * The duration, in seconds, of an audio snapshot created by
-     * {@link #getBufferedAudio()}.
-     */
-    public final int snapshotLengthSeconds;
-
-    /**
-     * The duration, in samples, of an audio snapshot created by
-     * {@link #getBufferedAudio()}.
-     */
-    public final int snapshotLengthSamples;
+    public static final int DEFAULT_SNAPSHOT_LENGTH = 10;
 
     /**
      * The queue used internally to hold buffers emitted by the
@@ -107,54 +59,100 @@ public class RecordingService extends Service {
      * {@see #queueGc()}
      * {@see #audioBufferQueue}
      */
-    public final ReentrantLock queueLock;
-
-    /**
-     * Approximates the length of the audioBufferQueue. The queue is no shorter
-     * than this amount at any given time.
-     */
-    private AtomicInteger audioBufferQueueLength;
+    private final ReentrantLock queueLock;
 
     /**
      * The maximum length of the audio buffer queue, at which point it holds
      * approximately (within <50ms on most devices)
      * {@link #snapshotLengthSeconds} seconds of audio.
      */
-    public final int maxAudioBufferQueueLength;
-
+    private int maxAudioBufferQueueLength;
     private final CompositeSubscription subscriptions;
 
+    /**
+     * The size of the buffer that we fill when polling the microphone.
+     * <p>
+     * Remark: per the docs, this must be *smaller* than the buffer size in
+     * {@link AudioManager}.
+     */
+    public int chunkBufferSize;
+    /**
+     * A hot observable connected to the microphone. This observable obtains
+     * a value when the service is started. It emits buffers containing the
+     * raw samples read from the microphone.
+     */
+    public Observable<short[]> audioStream;
+    /**
+     * A hot observable connected to the microphone. It emits the recording
+     * state of the microphone every {@link #STATE_POLL_PERIOD} milliseconds.
+     */
+    public Observable<Integer> recordingState;
+    /**
+     * The duration, in seconds, of an audio snapshot created by
+     * {@link #getBufferedAudio()}.
+     */
+    public int snapshotLengthSeconds;
+
+    /**
+     * The duration, in samples, of an audio snapshot created by
+     * {@link #getBufferedAudio()}.
+     */
+    public int snapshotLengthSamples;
+
+    AudioRecord audioRecord;
+    /**
+     * Approximates the length of the audioBufferQueue. The queue is no shorter
+     * than this amount at any given time.
+     */
+    private AtomicInteger audioBufferQueueLength;
 
     public RecordingService() {
-        snapshotLengthSeconds = DEFAULT_CHUNK_LENGTH;
-        snapshotLengthSamples = SAMPLE_RATE * snapshotLengthSeconds;
         audioBufferQueue = new ConcurrentLinkedQueue<>();
-        audioBufferQueueLength = new AtomicInteger(0);
         queueLock = new ReentrantLock(true);
         subscriptions = new CompositeSubscription();
+        audioBufferQueueLength = new AtomicInteger(0);
+    }
 
-        bufferSize = AudioRecord.getMinBufferSize(
-                SAMPLE_RATE,
-                AudioFormat.CHANNEL_IN_MONO,
-                AudioFormat.ENCODING_PCM_16BIT
+    private AudioManager getAudioManager() {
+        return AudioManager.getInstance();
+    }
+
+    @Override
+    public void onCreate() {
+        audioRecord = getAudioManager().newAudioRecord();
+
+        snapshotLengthSeconds = DEFAULT_SNAPSHOT_LENGTH;
+        snapshotLengthSamples
+                = snapshotLengthSeconds * getAudioManager().getSampleRate();
+        chunkBufferSize = getAudioManager().getBufferSize() / 2;
+        maxAudioBufferQueueLength
+                = snapshotLengthSamples / chunkBufferSize;
+
+        Timber.d(
+                "Configured RecordingService: " +
+                "snapshot length %d sec, %d samples " +
+                "chunk buffer size %d, so %d chunks max in ABQ",
+                snapshotLengthSeconds,
+                snapshotLengthSamples,
+                chunkBufferSize,
+                maxAudioBufferQueueLength
         );
-        chunkBufferSize = bufferSize / 2;
-        maxAudioBufferQueueLength = snapshotLengthSamples / chunkBufferSize;
-        Timber.d("Max ABQ length: %d", maxAudioBufferQueueLength);
 
         audioStream = Observable.create(subscriber -> {
-            initAudioRecord();
-
             if (audioRecord.getState() != AudioRecord.STATE_INITIALIZED) {
-                subscriber.onError(new RuntimeException("Failed to initialize" +
-                        " AudioRecord"));
+                subscriber.onError(
+                        new RuntimeException(
+                                "Failed to initialize AudioRecord"
+                        )
+                );
                 return;
             }
 
             audioRecord.startRecording();
-            while (audioRecord.getRecordingState() == AudioRecord
-                    .RECORDSTATE_RECORDING) {
-                short[] audioBuffer = new short[bufferSize / 2];
+            while (audioRecord.getRecordingState()
+                    == AudioRecord.RECORDSTATE_RECORDING) {
+                final int bufferSize = getAudioManager().getBufferSize();
+                final short[] audioBuffer = new short[bufferSize];
                 audioRecord.read(audioBuffer, 0, audioBuffer.length);
                 subscriber.onNext(audioBuffer);
             }
@@ -227,21 +225,6 @@ public class RecordingService extends Service {
         // gives us the number of buffers we need to pop to get a sample
         // array whose represented audio has that length in seconds.
         return linearizeQueue(maxAudioBufferQueueLength);
-    }
-
-    /**
-     * Initializes the {@link AudioRecord} object internal to the
-     * RecordingService.
-     */
-    private void initAudioRecord() {
-        if (audioRecord == null)
-            audioRecord = new AudioRecord(
-                    MediaRecorder.AudioSource.MIC,
-                    SAMPLE_RATE,
-                    AudioFormat.CHANNEL_IN_MONO,
-                    AudioFormat.ENCODING_PCM_16BIT,
-                    bufferSize
-            );
     }
 
     @Override

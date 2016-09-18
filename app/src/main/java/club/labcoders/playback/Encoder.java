@@ -19,6 +19,8 @@ import timber.log.Timber;
  * Class for wrapping Android's built-in encoding facilities with RxJava.
  */
 public class Encoder implements Observable.Operator<byte[], byte[]> {
+    private final int inputSampleRate;
+    private final int channelConfig;
     MediaCodec codec;
 
     boolean hasError = false;
@@ -29,20 +31,40 @@ public class Encoder implements Observable.Operator<byte[], byte[]> {
     public final static String MIME_TYPE = MediaFormat.MIMETYPE_AUDIO_AAC;
 
     public Encoder() {
+        this(
+                AudioManager.getInstance().getSampleRate(),
+                AudioManager.getInstance().getChannelConfig()
+        );
+    }
+
+    public Encoder(int inputSampleRate, int channelConfig) {
         codecInitialized = false;
+        this.inputSampleRate = inputSampleRate;
+        this.channelConfig = channelConfig;
         Timber.d("Created Encoder.");
     }
 
-    private void initCodec() {
+    private void initCodec(int sampleRate, int channelConfig) {
         try {
             codec = MediaCodec.createEncoderByType(MIME_TYPE);
         } catch (IOException e) {
-            Timber.e("Could not create MediaCodec with mimetype: " + MIME_TYPE);
+            Timber.e(
+                    "Could not create MediaCodec with mimetype: %s",
+                    MIME_TYPE
+            );
         }
 
-        MediaFormat format = MediaFormat.createAudioFormat(MIME_TYPE, RecordingService.SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO);
+        MediaFormat format = MediaFormat.createAudioFormat(
+                MIME_TYPE,
+                sampleRate,
+                channelConfig
+        );
+
         format.setInteger(MediaFormat.KEY_BIT_RATE, 128000);
-        format.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC);
+        format.setInteger(
+                MediaFormat.KEY_AAC_PROFILE,
+                MediaCodecInfo.CodecProfileLevel.AACObjectLC
+        );
         format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 1000000);
         format.setInteger(MediaFormat.KEY_CHANNEL_COUNT, 1);
 
@@ -83,11 +105,12 @@ public class Encoder implements Observable.Operator<byte[], byte[]> {
                     return;
                 }
                 if (!codecInitialized) {
-                    initCodec();
+                    initCodec(inputSampleRate, channelConfig);
                 }
                 int pointer = 0;
                 int finalSize = 0;
                 while (pointer < bytes.length) {
+                    Timber.d("Processed %d/%d", pointer, bytes.length);
                     int inIdx = -1;
                     int inc = 0;
 
