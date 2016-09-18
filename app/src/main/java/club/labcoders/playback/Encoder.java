@@ -18,7 +18,7 @@ import timber.log.Timber;
 /**
  * Class for wrapping Android's built-in encoding facilities with RxJava.
  */
-public class Encoder implements Observable.Operator<byte[], byte[]> {
+public class Encoder implements Observable.Operator<EncodedOutput, byte[]> {
     private final int inputSampleRate;
     private final int channelConfig;
     MediaCodec codec;
@@ -77,7 +77,7 @@ public class Encoder implements Observable.Operator<byte[], byte[]> {
 
     @Override
     public Subscriber<? super byte[]>
-    call(Subscriber<? super byte[]> subscriber) {
+    call(Subscriber<? super EncodedOutput> subscriber) {
         MediaCodec.Callback callback;
         final CVar<Integer> bufferIndex = new CVar<Integer>();
         ByteArrayOutputStream output = new ByteArrayOutputStream();
@@ -86,9 +86,11 @@ public class Encoder implements Observable.Operator<byte[], byte[]> {
             @Override
             public void onCompleted() {
                 Timber.d("onComplete upstream to encoder called.");
+                MediaFormat f = codec.getOutputFormat();
                 codec.stop();
                 codec.release();
                 codecInitialized = false;
+
                 subscriber.onCompleted();
             }
 
@@ -137,16 +139,18 @@ public class Encoder implements Observable.Operator<byte[], byte[]> {
 
                     int getOutputBufferTries = 3;
                     while (getOutputBufferTries > 0) {
-                        final MediaCodec.BufferInfo info
-                                = new MediaCodec.BufferInfo();
-                        outIdx = codec.dequeueOutputBuffer(info, 1000);
+                        MediaCodec.BufferInfo newInfo = new MediaCodec.BufferInfo();
+                        outIdx = codec.dequeueOutputBuffer(newInfo, 1000);
                         if (outIdx >= 0) {
                             ByteBuffer outBuffer = codec.getOutputBuffer(outIdx);
                             finalSize += outBuffer.remaining();
-                            byte[] nextBuffer = new byte[outBuffer.remaining()];
-                            outBuffer.get(nextBuffer);
-                            subscriber.onNext(nextBuffer);
-                            codec.releaseOutputBuffer(outIdx, 0);
+                            byte[] outArray = new byte[outBuffer.remaining()];
+                            outBuffer.get(outArray);
+
+                            EncodedOutput out = new EncodedOutput(outArray, newInfo);
+
+                            subscriber.onNext(out);
+                            codec.releaseOutputBuffer(outIdx, newInfo.presentationTimeUs);
                         } else {
                             switch (outIdx) {
                                 case -1:
@@ -168,52 +172,6 @@ public class Encoder implements Observable.Operator<byte[], byte[]> {
                 Timber.d("Encoded %d bytes, and wrote %d bytes to observer.", bytes.length, finalSize);
             }
         };
-
-//        callback = new MediaCodec.Callback() {
-//            @Override
-//            public void onInputBufferAvailable(
-//                    MediaCodec codec, int index) {
-//                try {
-//                    Timber.d("Codec thread ID: " + String.valueOf(Thread.currentThread()));
-//                    bufferIndex.write(index);
-//                }
-//                catch(InterruptedException e) {
-//                    Timber.e("HOLY SHIT");
-//                    hasError = true;
-//                    error = e;
-//                }
-//            }
-//
-//            @Override
-//            public void onOutputBufferAvailable(
-//                    MediaCodec codec,
-//                    int index,
-//                    MediaCodec.BufferInfo info) {
-//                if (0 != (info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM)) {
-//                    subscriber.onNext(codec.getOutputBuffer(index).array());
-//                    subscriber.onCompleted();
-//                    codec.stop();
-//                } else {
-//                    subscriber.onNext(codec.getOutputBuffer(index).array());
-//                }
-//            }
-//
-//            @Override
-//            public void onError(
-//                    MediaCodec codec,
-//                    MediaCodec.CodecException e) {
-//
-//            }
-//
-//            @Override
-//            public void onOutputFormatChanged(
-//                    MediaCodec codec,
-//                    MediaFormat format) {
-//
-//            }
-//        };
-//
-//        codec.setCallback(callback);
 
         return sub;
     }

@@ -5,19 +5,12 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
-import android.location.Location;
-import android.location.LocationManager;
-import android.media.AudioFormat;
 import android.media.AudioRecord;
-import android.media.MediaCodec;
-import android.media.MediaCodecInfo;
-import android.media.MediaFormat;
 import android.os.IBinder;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
-import android.webkit.MimeTypeMap;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -25,7 +18,6 @@ import android.widget.Toast;
 import org.joda.time.DateTime;
 
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.nio.ByteBuffer;
 
 import butterknife.BindView;
@@ -35,9 +27,7 @@ import club.labcoders.playback.api.ApiManager;
 import club.labcoders.playback.api.PlaybackApi;
 import club.labcoders.playback.api.models.AudioRecording;
 import club.labcoders.playback.api.models.Base64Blob;
-import club.labcoders.playback.api.models.GeographicalPosition;
 import club.labcoders.playback.api.models.Ping;
-import club.labcoders.playback.concurrent.CVar;
 import rx.Observable;
 import rx.Subscription;
 import rx.android.schedulers.AndroidSchedulers;
@@ -46,10 +36,6 @@ import rx.subscriptions.CompositeSubscription;
 import timber.log.Timber;
 
 import static android.content.pm.PackageManager.PERMISSION_GRANTED;
-import static android.media.MediaFormat.KEY_BIT_RATE;
-import static android.media.MediaFormat.KEY_CHANNEL_COUNT;
-import static android.media.MediaFormat.KEY_SAMPLE_RATE;
-import static club.labcoders.playback.Encoder.MIME_TYPE;
 
 public class MainActivity extends AppCompatActivity {
     private static final int FINE_LOCATION_PERMISSION_REQUEST = 0;
@@ -93,24 +79,26 @@ public class MainActivity extends AppCompatActivity {
 
             byte[] rawAudio = buf.array();
 
+            Encoder enc = new Encoder();
+
             Observable.just(rawAudio)
-                    .lift(new Encoder())
-                    .lift(new BufferOperator())
+                    .lift(enc)
+                    .lift(new MonoMuxingOperator(enc))
                     .flatMap(
                             bytes -> {
                                 Timber.d(
-                                        "Got encoded byte buffer length %d",
+                                        "Got muxed byte buffer length %d",
                                         bytes.length
                                 );
 
                                 final AudioRecording rec = new AudioRecording(
                                         DateTime.now(),
-                                        bytes.length
+                                        rawAudio.length
                                                 / 2.0
-                                                / AudioManager.getInstance()
-                                                .getSampleRate(),
+                                                / AudioManager.getInstance().getSampleRate(),
                                         new Base64Blob(bytes)
                                 );
+
                                 return httpService.upload(rec);
                             }
                     )
@@ -127,8 +115,7 @@ public class MainActivity extends AppCompatActivity {
                                                 id
                                         ),
                                         Toast.LENGTH_LONG
-                                )
-                                        .show();
+                                ) .show();
                             },
                             err -> {
                                 Timber.e("Failed to upload recording.");
@@ -171,6 +158,10 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
         ButterKnife.setDebug(true);
         ButterKnife.bind(this);
+
+        StorageManager.initialize(this);
+
+        Timber.d("Storage manager created. Directory at %s and cache at %s.", StorageManager.getInstance().directory(), StorageManager.getInstance().cache());
 
         Timber.plant(new Timber.DebugTree());
 
