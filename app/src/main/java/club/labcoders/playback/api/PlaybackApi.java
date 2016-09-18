@@ -1,8 +1,11 @@
 package club.labcoders.playback.api;
 
+import java.util.List;
+
 import club.labcoders.playback.api.models.AudioRecording;
 import club.labcoders.playback.api.models.Ping;
 import club.labcoders.playback.api.models.Pong;
+import club.labcoders.playback.api.models.RecordingMetadata;
 import retrofit2.http.Body;
 import retrofit2.http.GET;
 import retrofit2.http.POST;
@@ -18,4 +21,7 @@ public interface PlaybackApi {
 
     @POST("ping")
     Observable<Pong> postPing(@Body Ping ping);
+
+    @GET("metadata")
+    Observable<List<RecordingMetadata>> getMetadata();
 }

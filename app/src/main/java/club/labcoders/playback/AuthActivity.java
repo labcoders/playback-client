@@ -1,6 +1,7 @@
 package club.labcoders.playback;
 
 import android.os.Bundle;
+import android.support.annotation.Nullable;
 import android.support.design.widget.FloatingActionButton;
 import android.support.design.widget.Snackbar;
 import android.support.v7.app.AppCompatActivity;
@@ -16,6 +17,7 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Toast;
 
+import butterknife.BindString;
 import butterknife.BindView;
 import butterknife.ButterKnife;
 import butterknife.OnClick;
@@ -25,12 +27,13 @@ import club.labcoders.playback.api.AuthManager;
 import rx.android.schedulers.AndroidSchedulers;
 import rx.schedulers.Schedulers;
 
-public class AuthActivity extends AppCompatActivity {
+public class AuthActivity extends Activity {
 
 
     @BindView(R.id.username)
     EditText username;
 
+    @Nullable
     @BindView(R.id.password)
     EditText password;
 
@@ -43,6 +46,8 @@ public class AuthActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        setContentView(R.layout.activity_auth);
 
         ButterKnife.setDebug(true);
         ButterKnife.bind(this);
