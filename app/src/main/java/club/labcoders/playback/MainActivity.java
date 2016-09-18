@@ -196,10 +196,6 @@ public class MainActivity extends AppCompatActivity {
         ButterKnife.setDebug(true);
         ButterKnife.bind(this);
 
-        StorageManager.initialize(this);
-
-        Timber.d("Storage manager created. Directory at %s and cache at %s.", StorageManager.getInstance().directory(), StorageManager.getInstance().cache());
-
         Timber.plant(new Timber.DebugTree());
 
         Intent recordingIntent = new Intent(this, RecordingService.class);

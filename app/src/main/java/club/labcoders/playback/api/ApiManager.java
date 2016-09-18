@@ -14,6 +14,7 @@ import okhttp3.OkHttpClient;
 import retrofit2.Retrofit;
 import retrofit2.adapter.rxjava.RxJavaCallAdapterFactory;
 import retrofit2.converter.gson.GsonConverterFactory;
+import timber.log.Timber;
 
 /**
  * Singleton class for holding global API settings.
@@ -23,9 +24,14 @@ public class ApiManager {
 
     private static ApiManager instance;
 
+    public static void initialize(String token) {
+        instance = new ApiManager(token);
+    }
+
     public static ApiManager getInstance() {
         if(instance == null) {
-            instance = new ApiManager();
+            Timber.e("Tried to get ApiManager before initialization.");
+            return null;
         }
 
         return instance;
@@ -37,7 +43,7 @@ public class ApiManager {
     /**
      * Constructor is private, for singleton.
      */
-    private ApiManager() {
+    private ApiManager(String tok) {
         final Gson gson = new GsonBuilder()
                 .registerTypeAdapter(
                         Base64Blob.class,
@@ -60,6 +66,7 @@ public class ApiManager {
 
         final OkHttpClient client = new OkHttpClient.Builder()
                 .addInterceptor(new GzipInterceptor())
+                .addInterceptor(new AuthHeaderInterceptor(tok))
                 .build();
 
         adapter = new Retrofit.Builder()
