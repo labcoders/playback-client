@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.media.AudioRecord;
 import android.os.Binder;
 
+import java.nio.ByteBuffer;
 import java.nio.ShortBuffer;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;

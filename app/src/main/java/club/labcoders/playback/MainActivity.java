@@ -24,6 +24,7 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 
 import butterknife.BindView;
 import butterknife.ButterKnife;
@@ -75,6 +76,7 @@ public class MainActivity extends AppCompatActivity {
             short[] shorts = recordingService.getBufferedAudio();
 
             ByteBuffer buf = ByteBuffer.allocate(shorts.length * 2);
+            buf.order(ByteOrder.nativeOrder());
             for (short s : shorts) {
                 buf.putShort(s);
             }
@@ -84,9 +86,29 @@ public class MainActivity extends AppCompatActivity {
             Encoder enc = new Encoder();
 
             Observable.just(rawAudio)
-//                    .lift(enc)
-//                    .map(encodedOutput -> encodedOutput.byteArray)
-//                    .lift(new BufferOperator())
+                    .doOnNext(
+                            bytes -> {
+                                final File f = new File(
+                                        Environment.getExternalStorageDirectory(),
+                                        "temp.pcm"
+                                );
+                                Timber.d("dumping pcm to %s", f.toString());
+                                try(final FileOutputStream fos
+                                    = new FileOutputStream(f)) {
+                                    fos.write(bytes);
+                                }
+                                catch(FileNotFoundException e) {
+                                    Timber.e("File not found.");
+                                }
+                                catch(IOException e) {
+                                    Timber.e("io error");
+                                }
+                            }
+                    )
+                    .lift(enc)
+                    .map(encodedOutput -> encodedOutput.byteArray)
+                    .lift(new BufferOperator())
+//                    .lift(new MonoMuxingOperator(enc))
                     .flatMap(
                             bytes -> {
                                 Timber.d(
@@ -94,13 +116,14 @@ public class MainActivity extends AppCompatActivity {
                                         bytes.length
                                 );
 
-                                final File f = new File(getFilesDir(), "temp.pmc");
+                                final File f = new File(
+                                        Environment.getExternalStorageDirectory(),
+                                        "temp.mp4"
+                                );
                                 Timber.d("Dumping to %s.", f.getAbsolutePath());
                                 try (final FileOutputStream fos
                                              = new FileOutputStream(f)) {
                                     fos.write(bytes);
-                                } catch (FileNotFoundException e) {
-                                    e.printStackTrace();
                                 } catch (IOException e) {
                                     e.printStackTrace();
                                 }

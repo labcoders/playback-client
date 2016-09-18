@@ -105,8 +105,6 @@ public class Encoder implements Observable.Operator<EncodedOutput, byte[]> {
             @Override
             public void onNext(byte[] bytes) {
                 // Order bytes by native endian-ness
-                byte[] orderedBytes = ByteBuffer.wrap(bytes).order(ByteOrder.nativeOrder()).array();
-
                 if(subscriber.isUnsubscribed()) {
                     return;
                 }
@@ -115,8 +113,8 @@ public class Encoder implements Observable.Operator<EncodedOutput, byte[]> {
                 }
                 int pointer = 0;
                 int finalSize = 0;
-                while (pointer < orderedBytes.length) {
-                    Timber.d("Processed %d/%d", pointer, orderedBytes.length);
+                while (pointer < bytes.length) {
+                    Timber.d("Processed %d/%d", pointer, bytes.length);
                     int inIdx = -1;
                     int inc = 0;
 
@@ -130,9 +128,9 @@ public class Encoder implements Observable.Operator<EncodedOutput, byte[]> {
 
                             // inc is number of bytes that we are going
                             // to write into the inputBuffer
-                            inc = Math.min(orderedBytes.length - pointer, capacity);
+                            inc = Math.min(bytes.length - pointer, capacity);
 
-                            inBuffer.put(orderedBytes, pointer, inc);
+                            inBuffer.put(bytes, pointer, inc);
                             pointer += inc;
                             if (sendEOS) {
                                 codec.queueInputBuffer(inIdx, 0, inc, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
@@ -180,7 +178,7 @@ public class Encoder implements Observable.Operator<EncodedOutput, byte[]> {
                 if (sendEOS) {
                     Timber.d("Sent EOS.");
                 } else {
-                    Timber.d("Encoded %d bytes, and wrote %d bytes to observer.", orderedBytes.length, finalSize);
+                    Timber.d("Encoded %d bytes, and wrote %d bytes to observer.", bytes.length, finalSize);
                 }
             }
         };

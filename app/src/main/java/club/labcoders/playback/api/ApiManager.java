@@ -10,6 +10,7 @@ import club.labcoders.playback.api.codecs.Base64BlobSerializer;
 import club.labcoders.playback.api.codecs.DateTimeDeserializer;
 import club.labcoders.playback.api.codecs.DateTimeSerializer;
 import club.labcoders.playback.api.models.Base64Blob;
+import okhttp3.OkHttpClient;
 import retrofit2.Retrofit;
 import retrofit2.adapter.rxjava.RxJavaCallAdapterFactory;
 import retrofit2.converter.gson.GsonConverterFactory;
@@ -57,10 +58,15 @@ public class ApiManager {
                 .serializeNulls()
                 .create();
 
+        final OkHttpClient client = new OkHttpClient.Builder()
+                .addInterceptor(new GzipInterceptor())
+                .build();
+
         adapter = new Retrofit.Builder()
                 .baseUrl(BASE_URL)
                 .addConverterFactory(GsonConverterFactory.create(gson))
                 .addCallAdapterFactory(RxJavaCallAdapterFactory.create())
+                .client(client)
                 .build();
 
         api = adapter.create(PlaybackApi.class);
