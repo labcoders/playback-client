@@ -6,9 +6,12 @@ import android.os.Binder;
 import android.os.IBinder;
 import android.support.annotation.Nullable;
 
+import java.util.List;
+
 import club.labcoders.playback.api.ApiManager;
 import club.labcoders.playback.api.PlaybackApi;
 import club.labcoders.playback.api.models.AudioRecording;
+import club.labcoders.playback.api.models.RecordingMetadata;
 import rx.Observable;
 import timber.log.Timber;
 
@@ -25,9 +28,14 @@ public class HttpService extends Service {
         return api.uploadRecording(rec);
     }
 
-    public Observable<AudioRecording> get(Integer id) {
+    public Observable<AudioRecording> getAudioRecording(Integer id) {
         Timber.d("Recoding retrieval started.");
         return api.getRecording(id);
+    }
+
+    public Observable<List<RecordingMetadata>> getMetadata() {
+        Timber.d("Metadata retrieval started.");
+        return api.getMetadata();
     }
 
     @Nullable

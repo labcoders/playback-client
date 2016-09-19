@@ -17,6 +17,7 @@ import club.labcoders.playback.api.ApiManager;
 import club.labcoders.playback.api.AuthApi;
 import club.labcoders.playback.api.AuthManager;
 import club.labcoders.playback.api.models.AuthPing;
+import club.labcoders.playback.api.models.AuthResult;
 import club.labcoders.playback.api.models.AuthenticationRequest;
 import club.labcoders.playback.db.DatabaseService;
 import rx.Observable;
@@ -36,11 +37,13 @@ public class AuthActivity extends AppCompatActivity {
     Button loginButton;
 
     private AuthApi api;
-    private SQLiteDatabase db;
     private Subscription authSubscription = null;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        Timber.plant(new Timber.DebugTree());
+
+        Timber.d("created auth activity");
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_auth);
 
@@ -49,16 +52,18 @@ public class AuthActivity extends AppCompatActivity {
         ButterKnife.setDebug(true);
         ButterKnife.bind(this);
 
+        api = AuthManager.getInstance().getApi();
 
         // Try to get session token from local DB
         final Box<String> tokenBox = new Box<>();
         new RxServiceBinding<DatabaseService.DatabaseServiceBinder>(
                 this,
                 new Intent(this, DatabaseService.class),
-                Service.BIND_AUTO_CREATE).binder()
+                Service.BIND_AUTO_CREATE).binder(true)
                 .map(DatabaseService.DatabaseServiceBinder::getService)
                 .flatMap(DatabaseService::getToken)
                 .flatMap(s -> {
+                    Timber.d("Got token %s", s);
                     if(s == null)
                         return Observable.just(null);
                     tokenBox.setValue(s);
@@ -85,30 +90,32 @@ public class AuthActivity extends AppCompatActivity {
 
     @OnClick(R.id.loginButton)
     public synchronized void login() {
+        Timber.d("click");
         if(authSubscription != null && !authSubscription.isUnsubscribed()) {
             Timber.d("Ignoring multiple concurrent login attempts.");
             return;
         }
         final String username = this.username.getText().toString();
         final String password = this.password.getText().toString();
+        final Box<AuthResult> authResultBox = new Box<>();
         authSubscription = api.auth(
                 new AuthenticationRequest(username, password))
+                .flatMap(authResult1 -> {
+                    authResultBox.setValue(authResult1);
+                    return new RxServiceBinding<DatabaseService.DatabaseServiceBinder>(
+                            AuthActivity.this,
+                            new Intent(AuthActivity.this, DatabaseService.class),
+                            Service.BIND_AUTO_CREATE
+                    ).binder(true);
+                })
+                .map(DatabaseService.DatabaseServiceBinder::getService)
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribeOn(Schedulers.io())
-                .subscribe(authResult -> {
+                .subscribe(db -> {
+                    final AuthResult authResult = authResultBox.getValue();
                     if (authResult.getSuccess()) {
-                        ContentValues vals = new ContentValues(1);
-                        vals.put("token", authResult.getToken());
-                        db.updateWithOnConflict(
-                                "session",
-                                vals,
-                                "id = 1",
-                                new String[0],
-                                db.CONFLICT_REPLACE
-                        );
-
+                        db.upsertToken(authResultBox.getValue().getToken());
                         ApiManager.initialize(authResult.getToken());
-
                         startActivity(new Intent(this, MainActivity.class));
                         finish();
                     }
@@ -123,7 +130,6 @@ public class AuthActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        db.close();
     }
 }
 

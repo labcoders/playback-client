@@ -1,6 +1,7 @@
 package club.labcoders.playback.db;
 
 import android.app.Service;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
@@ -81,6 +82,18 @@ public class DatabaseService extends Service {
                         subscriber.onCompleted();
                     }
                 }
+        );
+    }
+
+    public void upsertToken(String token) {
+        ContentValues vals = new ContentValues(1);
+        vals.put("token", token);
+        db.updateWithOnConflict(
+                "session",
+                vals,
+                "id = 1",
+                new String[0],
+                db.CONFLICT_REPLACE
         );
     }
 

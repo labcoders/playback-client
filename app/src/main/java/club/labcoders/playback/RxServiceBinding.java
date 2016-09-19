@@ -32,9 +32,17 @@ public class RxServiceBinding<T> {
         this.context = context;
         this.subject = BehaviorSubject.create();
         context.bindService(intent, connection, flags);
+
     }
 
-    public Observable<T> binder() {
-        return subject.asObservable();
+    public ServiceConnection getConnection() {
+        return connection;
+    }
+
+    public Observable<T> binder(boolean cleanup) {
+        if(cleanup)
+            return subject.asObservable().doOnUnsubscribe(() -> context.unbindService(connection));
+        else
+            return subject.asObservable();
     }
 }

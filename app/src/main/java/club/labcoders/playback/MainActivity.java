@@ -12,6 +12,9 @@ import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.support.v7.widget.DefaultItemAnimator;
+import android.support.v7.widget.LinearLayoutManager;
+import android.support.v7.widget.RecyclerView;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -51,6 +54,9 @@ public class MainActivity extends AppCompatActivity {
 
     @BindView(R.id.uploadButton)
     Button recordButton;
+
+    @BindView(R.id.availableRecordings)
+    RecyclerView availableRecordings;
 
     RecordingService recordingService;
     HttpService httpService;
@@ -196,8 +202,6 @@ public class MainActivity extends AppCompatActivity {
         ButterKnife.setDebug(true);
         ButterKnife.bind(this);
 
-        Timber.plant(new Timber.DebugTree());
-
         Intent recordingIntent = new Intent(this, RecordingService.class);
         startService(recordingIntent);
         Timber.d("Started recording service.");
@@ -244,6 +248,22 @@ public class MainActivity extends AppCompatActivity {
             final HttpService.HttpServiceBinder binder = (HttpService.HttpServiceBinder) service;
             httpService = binder.getService();
             Timber.d("Assigned httpService");
+
+            // Initialize the recycler view.
+            httpService.getMetadata()
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .subscribe(list -> {
+                                RecyclerView.LayoutManager layoutManager = new LinearLayoutManager(getApplicationContext());
+                                availableRecordings.setLayoutManager(layoutManager);
+
+                                RecordingMetadataAdapter adapter = new RecordingMetadataAdapter(list);
+                                availableRecordings.setAdapter(adapter);
+
+                                // Can add ItemDecoration if i want.
+
+                                availableRecordings.setItemAnimator(new DefaultItemAnimator());
+                            });
+
         }
 
         @Override
