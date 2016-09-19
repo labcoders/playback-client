@@ -152,8 +152,18 @@ public class RecordingService extends Service {
             }
 
             audioRecord.startRecording();
+            long lastTime = 0;
+            long thisTime = 0;
             while (audioRecord.getRecordingState()
                     == AudioRecord.RECORDSTATE_RECORDING) {
+                lastTime = thisTime;
+                thisTime = System.nanoTime();
+//                if(lastTime != 0)
+//                    Timber.d(
+//                            "Time since last record: %.2f ms",
+//                            (thisTime - lastTime) / 1000000.
+//                    );
+
                 final short[] audioBuffer = new short[chunkBufferSize];
                 final int readOut = audioRecord.read(
                         audioBuffer,
@@ -285,7 +295,12 @@ public class RecordingService extends Service {
     }
 
     @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
+    public synchronized int onStartCommand(
+            Intent intent, int flags, int startId) {
+        if(audioRecord != null
+                && audioRecord.getRecordingState() == AudioRecord.RECORDSTATE_RECORDING)
+            return START_STICKY;
+
         final Subscription producer = audioStream
                 .subscribeOn(Schedulers.io())
                 .observeOn(Schedulers.io())
@@ -311,6 +326,7 @@ public class RecordingService extends Service {
                         .observeOn(Schedulers.io())
                         .subscribe(aVoid -> queueGc())
         );
+
         return START_STICKY;
     }
 
@@ -333,10 +349,10 @@ public class RecordingService extends Service {
                 queueLock.unlock();
             }
         }
-        if (collected > 0) {
-            Timber.d("Garbage collected %d chunks.",
-                    collected);
-        }
+//        if (collected > 0) {
+//            Timber.d("Garbage collected %d chunks.",
+//                    collected);
+//        }
     }
 
     @Override

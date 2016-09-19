@@ -14,10 +14,10 @@ public class AudioManager {
      * The possible values to use as a sample rate for the microphone.
      */
     public static final int[] SAMPLE_RATES = {
-            44100,
+//            44100,
 //            22050,
 //            11025,
-//            8000,
+            8000,
     };
 
     public static final int[] AUDIO_FORMATS = {

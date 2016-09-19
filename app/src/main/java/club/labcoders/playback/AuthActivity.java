@@ -1,20 +1,15 @@
 package club.labcoders.playback;
 
+import android.app.Service;
 import android.os.Bundle;
-import android.support.annotation.Nullable;
-import android.support.design.widget.FloatingActionButton;
-import android.support.design.widget.Snackbar;
 import android.support.v7.app.AppCompatActivity;
 import android.content.ContentValues;
-import android.content.Context;
 import android.content.Intent;
-import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Toast;
 
-import butterknife.BindString;
 import butterknife.BindView;
 import butterknife.ButterKnife;
 import butterknife.OnClick;
@@ -23,6 +18,9 @@ import club.labcoders.playback.api.AuthApi;
 import club.labcoders.playback.api.AuthManager;
 import club.labcoders.playback.api.models.AuthPing;
 import club.labcoders.playback.api.models.AuthenticationRequest;
+import club.labcoders.playback.db.DatabaseService;
+import rx.Observable;
+import rx.Subscription;
 import rx.android.schedulers.AndroidSchedulers;
 import rx.schedulers.Schedulers;
 import timber.log.Timber;
@@ -39,6 +37,7 @@ public class AuthActivity extends AppCompatActivity {
 
     private AuthApi api;
     private SQLiteDatabase db;
+    private Subscription authSubscription = null;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -50,55 +49,72 @@ public class AuthActivity extends AppCompatActivity {
         ButterKnife.setDebug(true);
         ButterKnife.bind(this);
 
-        db = openOrCreateDatabase("session", Context.MODE_PRIVATE, null);
-        db.execSQL("create table if not exists session (id INT, token VARCHAR);");
 
         // Try to get session token from local DB
-        Cursor cur = db.rawQuery("select * from session where id = 1;", null);
-
-        api = AuthManager.getInstance().getApi();
-
-        // Try to ping and see if token is still valid
-        // If valid, start main activity
-        // If not, stay on login page and continue
-        // rendering UI.
-        if (cur.getCount() > 0) {
-            cur.moveToNext();
-            final String token = cur.getString(cur.getColumnIndex("token"));
-            api.ping(new AuthPing(token))
-                    .subscribeOn(Schedulers.io())
-                    .observeOn(AndroidSchedulers.mainThread())
-                    .subscribe(pong -> {
-                        if (pong.isValid()) {
-                            ApiManager.initialize(token);
-                            Timber.d("Initialized ApiManager");
-                            startActivity(new Intent(this, MainActivity.class));
-                            finish();
-                        }
-                    });
-        }
+        final Box<String> tokenBox = new Box<>();
+        new RxServiceBinding<DatabaseService.DatabaseServiceBinder>(
+                this,
+                new Intent(this, DatabaseService.class),
+                Service.BIND_AUTO_CREATE).binder()
+                .map(DatabaseService.DatabaseServiceBinder::getService)
+                .flatMap(DatabaseService::getToken)
+                .flatMap(s -> {
+                    if(s == null)
+                        return Observable.just(null);
+                    tokenBox.setValue(s);
+                    return AuthManager.getInstance()
+                            .getApi()
+                            .ping(new AuthPing(s));
+                })
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(authPong -> {
+                    if(authPong == null) {
+                        Timber.d("No token in DB.");
+                    }
+                    else if(authPong.isValid()) {
+                        ApiManager.initialize(tokenBox.getValue());
+                        startActivity(new Intent(this, MainActivity.class));
+                        finish();
+                    }
+                    else {
+                        Timber.d("Token is too old.");
+                    }
+                });
     }
 
     @OnClick(R.id.loginButton)
-    public void login() {
+    public synchronized void login() {
+        if(authSubscription != null && !authSubscription.isUnsubscribed()) {
+            Timber.d("Ignoring multiple concurrent login attempts.");
+            return;
+        }
         final String username = this.username.getText().toString();
         final String password = this.password.getText().toString();
-        api.auth(new AuthenticationRequest(username, password))
+        authSubscription = api.auth(
+                new AuthenticationRequest(username, password))
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribeOn(Schedulers.io())
                 .subscribe(authResult -> {
                     if (authResult.getSuccess()) {
-                        ContentValues vals = new ContentValues(2);
-                        vals.put("id", 1);
+                        ContentValues vals = new ContentValues(1);
                         vals.put("token", authResult.getToken());
-                        db.insert("session", null, vals);
+                        db.updateWithOnConflict(
+                                "session",
+                                vals,
+                                "id = 1",
+                                new String[0],
+                                db.CONFLICT_REPLACE
+                        );
 
                         ApiManager.initialize(authResult.getToken());
 
                         startActivity(new Intent(this, MainActivity.class));
                         finish();
-                    } else {
-                        Toast.makeText(this, "Failed to login.", Toast.LENGTH_SHORT);
+                    }
+                    else {
+                        Toast.makeText(this, "Failed to login.", Toast
+                                .LENGTH_SHORT);
                         this.password.setText("");
                     }
                 });
