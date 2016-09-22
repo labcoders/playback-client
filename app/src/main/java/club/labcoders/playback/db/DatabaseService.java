@@ -89,15 +89,10 @@ public class DatabaseService extends Service {
 
     public void upsertToken(String token) {
         ContentValues vals = new ContentValues(1);
+        vals.put("id", 1);
         vals.put("token", token);
-        final int affectedRows = db.updateWithOnConflict(
-                "session",
-                vals,
-                "id = 1",
-                new String[0],
-                db.CONFLICT_REPLACE
-        );
-
+        final long affectedRows
+                = db.insertWithOnConflict("session", null, vals, SQLiteDatabase.CONFLICT_REPLACE);
         Timber.d("upsertToken: updated %d row(s) in the db.", affectedRows);
     }
 

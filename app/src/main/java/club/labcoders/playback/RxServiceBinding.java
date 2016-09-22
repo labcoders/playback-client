@@ -8,6 +8,7 @@ import android.os.IBinder;
 
 import rx.Observable;
 import rx.subjects.BehaviorSubject;
+import timber.log.Timber;
 
 public class RxServiceBinding<T> {
     private final Context context;
@@ -41,7 +42,12 @@ public class RxServiceBinding<T> {
 
     public Observable<T> binder(boolean cleanup) {
         if(cleanup)
-            return subject.asObservable().doOnUnsubscribe(() -> context.unbindService(connection));
+            return subject.asObservable().doOnUnsubscribe(
+                    () -> {
+                        Timber.d("Unbinding service connection from RxServiceBinding.");
+                        context.unbindService(connection);
+                    }
+            );
         else
             return subject.asObservable();
     }

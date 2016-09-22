@@ -1,5 +1,6 @@
 package club.labcoders.playback;
 
+import android.app.Activity;
 import android.app.Service;
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
@@ -24,9 +25,10 @@ import rx.Observable;
 import rx.Subscription;
 import rx.android.schedulers.AndroidSchedulers;
 import rx.schedulers.Schedulers;
+import rx.subscriptions.CompositeSubscription;
 import timber.log.Timber;
 
-public class AuthActivity extends AppCompatActivity {
+public class AuthActivity extends Activity {
     @BindView(R.id.usernameField)
     EditText username;
 
@@ -38,6 +40,11 @@ public class AuthActivity extends AppCompatActivity {
 
     private AuthApi api;
     private Subscription authSubscription = null;
+    private final CompositeSubscription subscriptions;
+
+    public AuthActivity() {
+        subscriptions = new CompositeSubscription();
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -56,7 +63,7 @@ public class AuthActivity extends AppCompatActivity {
 
         // Try to get session token from local DB
         final Box<String> tokenBox = new Box<>();
-        new RxServiceBinding<DatabaseService.DatabaseServiceBinder>(
+        final Subscription sub = new RxServiceBinding<DatabaseService.DatabaseServiceBinder>(
                 this,
                 new Intent(this, DatabaseService.class),
                 Service.BIND_AUTO_CREATE
@@ -71,7 +78,9 @@ public class AuthActivity extends AppCompatActivity {
                     tokenBox.setValue(s);
                     return AuthManager.getInstance()
                             .getApi()
-                            .ping(new AuthPing(s));
+                            .ping(new AuthPing(s))
+                            .subscribeOn(Schedulers.io())
+                            .observeOn(AndroidSchedulers.mainThread());
                 })
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
@@ -86,9 +95,9 @@ public class AuthActivity extends AppCompatActivity {
                             } else {
                                 Timber.d("Token is too old.");
                             }
-                        },
-                        throwable -> authSubscription.unsubscribe()
+                        }
                 );
+        subscriptions.add(sub);
     }
 
     @OnClick(R.id.loginButton)
@@ -101,7 +110,7 @@ public class AuthActivity extends AppCompatActivity {
         final String username = this.username.getText().toString();
         final String password = this.password.getText().toString();
         final Box<AuthResult> authResultBox = new Box<>();
-        authSubscription = api.auth(
+        final Subscription sub = api.auth(
                 new AuthenticationRequest(username, password))
                 .flatMap(authResult1 -> {
                     authResultBox.setValue(authResult1);
@@ -119,6 +128,7 @@ public class AuthActivity extends AppCompatActivity {
                     final AuthResult authResult = authResultBox.getValue();
                     if (authResult.getSuccess()) {
                         Toast.makeText(this, "Logged in!", Toast.LENGTH_LONG).show();
+                        Timber.d("About to upsert token.");
                         db.upsertToken(authResultBox.getValue().getToken());
                         ApiManager.initialize(authResult.getToken());
                         startActivity(new Intent(this, MainActivity.class));
@@ -130,10 +140,13 @@ public class AuthActivity extends AppCompatActivity {
                         this.password.setText("");
                     }
                 });
+        subscriptions.add(sub);
     }
 
     @Override
     protected void onDestroy() {
+        Timber.d("Destroying AuthActivity");
+        subscriptions.unsubscribe();
         super.onDestroy();
     }
 }
