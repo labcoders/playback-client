@@ -59,7 +59,9 @@ public class AuthActivity extends AppCompatActivity {
         new RxServiceBinding<DatabaseService.DatabaseServiceBinder>(
                 this,
                 new Intent(this, DatabaseService.class),
-                Service.BIND_AUTO_CREATE).binder(true)
+                Service.BIND_AUTO_CREATE
+        )
+                .binder(true)
                 .map(DatabaseService.DatabaseServiceBinder::getService)
                 .flatMap(DatabaseService::getToken)
                 .flatMap(s -> {
@@ -73,19 +75,20 @@ public class AuthActivity extends AppCompatActivity {
                 })
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
-                .subscribe(authPong -> {
-                    if(authPong == null) {
-                        Timber.d("No token in DB.");
-                    }
-                    else if(authPong.isValid()) {
-                        ApiManager.initialize(tokenBox.getValue());
-                        startActivity(new Intent(this, MainActivity.class));
-                        finish();
-                    }
-                    else {
-                        Timber.d("Token is too old.");
-                    }
-                });
+                .subscribe(
+                        authPong -> {
+                            if (authPong == null) {
+                                Timber.d("No token in DB.");
+                            } else if (authPong.isValid()) {
+                                ApiManager.initialize(tokenBox.getValue());
+                                startActivity(new Intent(this, MainActivity.class));
+                                finish();
+                            } else {
+                                Timber.d("Token is too old.");
+                            }
+                        },
+                        throwable -> authSubscription.unsubscribe()
+                );
     }
 
     @OnClick(R.id.loginButton)
@@ -108,12 +111,14 @@ public class AuthActivity extends AppCompatActivity {
                             Service.BIND_AUTO_CREATE
                     ).binder(true);
                 })
+                .doOnNext(databaseServiceBinder -> Timber.d("Got DB binder."))
                 .map(DatabaseService.DatabaseServiceBinder::getService)
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribeOn(Schedulers.io())
                 .subscribe(db -> {
                     final AuthResult authResult = authResultBox.getValue();
                     if (authResult.getSuccess()) {
+                        Toast.makeText(this, "Logged in!", Toast.LENGTH_LONG).show();
                         db.upsertToken(authResultBox.getValue().getToken());
                         ApiManager.initialize(authResult.getToken());
                         startActivity(new Intent(this, MainActivity.class));

@@ -189,7 +189,11 @@ public class MainActivity extends AppCompatActivity {
                                     Toast.LENGTH_LONG
                             ).show();
                         }, err -> {
-                            Toast.makeText(this, "Could not connect to server.", Toast.LENGTH_SHORT);
+                            Toast.makeText(
+                                    this,
+                                    "Could not connect to server.",
+                                    Toast.LENGTH_SHORT
+                            ).show();
                         })
         );
     }
@@ -220,6 +224,8 @@ public class MainActivity extends AppCompatActivity {
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, FINE_LOCATION_PERMISSION_REQUEST);
         }
+
+
     }
     @Override
     protected void onStart() {
@@ -251,18 +257,19 @@ public class MainActivity extends AppCompatActivity {
 
             // Initialize the recycler view.
             httpService.getMetadata()
+                    .subscribeOn(Schedulers.io())
                     .observeOn(AndroidSchedulers.mainThread())
                     .subscribe(list -> {
-                                RecyclerView.LayoutManager layoutManager = new LinearLayoutManager(getApplicationContext());
-                                availableRecordings.setLayoutManager(layoutManager);
+                        RecyclerView.LayoutManager layoutManager = new LinearLayoutManager(getApplicationContext());
+                        availableRecordings.setLayoutManager(layoutManager);
 
-                                RecordingMetadataAdapter adapter = new RecordingMetadataAdapter(list);
-                                availableRecordings.setAdapter(adapter);
+                        RecordingMetadataAdapter adapter = new RecordingMetadataAdapter(list);
+                        availableRecordings.setAdapter(adapter);
 
-                                // Can add ItemDecoration if i want.
+                        // Can add ItemDecoration if i want.
 
-                                availableRecordings.setItemAnimator(new DefaultItemAnimator());
-                            });
+                        availableRecordings.setItemAnimator(new DefaultItemAnimator());
+                    });
 
         }
 

@@ -9,9 +9,11 @@ import android.database.sqlite.SQLiteDatabase;
 import android.os.Binder;
 import android.os.IBinder;
 import android.support.annotation.Nullable;
+import android.widget.Toast;
 
 import club.labcoders.playback.db.models.AudioRecordingDb;
 import rx.Observable;
+import timber.log.Timber;
 
 public class DatabaseService extends Service {
     private SQLiteDatabase db;
@@ -27,7 +29,7 @@ public class DatabaseService extends Service {
                     "latitude REAL, " +
                     "longitude REAL, " +
                     "duration REAL NOT NULL, " +
-                    "recorded_at DATETIME NOT NULL DEFAULT datetime('now') " +
+                    "recorded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP" +
                     ");",
     };
 
@@ -88,13 +90,15 @@ public class DatabaseService extends Service {
     public void upsertToken(String token) {
         ContentValues vals = new ContentValues(1);
         vals.put("token", token);
-        db.updateWithOnConflict(
+        final int affectedRows = db.updateWithOnConflict(
                 "session",
                 vals,
                 "id = 1",
                 new String[0],
                 db.CONFLICT_REPLACE
         );
+
+        Timber.d("upsertToken: updated %d row(s) in the db.", affectedRows);
     }
 
     public Observable<AudioRecordingDb> getRecordings() {

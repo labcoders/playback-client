@@ -21,12 +21,18 @@
         <service
             android:name=".HttpService"
             android:enabled="true"
-            android:exported="true" />
+            android:exported="false" />
 
         <service
             android:name=".RecordingService"
             android:enabled="true"
-            android:exported="true" />
+            android:exported="false" />
+
+        <service
+            android:name=".db.DatabaseService"
+            android:enabled="true"
+            android:exported="false" />
+
         <receiver
             android:name=".AutoStart"
             android:enabled="true"

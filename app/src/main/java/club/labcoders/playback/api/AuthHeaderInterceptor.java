@@ -7,8 +7,12 @@ import okhttp3.Request;
 import okhttp3.Response;
 
 public class AuthHeaderInterceptor implements Interceptor {
+    private final String sessionToken;
 
-    String sessionToken;
+    public AuthHeaderInterceptor(String token) {
+        sessionToken = token;
+    }
+
     @Override
     public Response intercept(final Chain chain) throws IOException {
         Request orig = chain.request();
@@ -20,9 +24,5 @@ public class AuthHeaderInterceptor implements Interceptor {
 
 
         return chain.proceed(newReq);
-    }
-
-    public AuthHeaderInterceptor(String token) {
-        sessionToken = token;
     }
 }
