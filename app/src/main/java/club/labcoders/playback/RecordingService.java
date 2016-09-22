@@ -298,8 +298,12 @@ public class RecordingService extends Service {
     public synchronized int onStartCommand(
             Intent intent, int flags, int startId) {
         if(audioRecord != null
-                && audioRecord.getRecordingState() == AudioRecord.RECORDSTATE_RECORDING)
+                && audioRecord.getRecordingState() == AudioRecord.RECORDSTATE_RECORDING) {
+            Timber.d("Received extra onStartCommand.");
             return START_STICKY;
+        }
+
+        Timber.d("Starting RecordingService.");
 
         final Subscription producer = audioStream
                 .subscribeOn(Schedulers.io())
@@ -324,6 +328,7 @@ public class RecordingService extends Service {
         subscriptions.add(
                 gcTimer.subscribeOn(Schedulers.io())
                         .observeOn(Schedulers.io())
+                        .doOnNext(aVoid -> Timber.d("GC tick."))
                         .subscribe(aVoid -> queueGc())
         );
 

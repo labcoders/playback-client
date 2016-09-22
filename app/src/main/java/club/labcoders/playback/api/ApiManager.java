@@ -25,7 +25,11 @@ public class ApiManager {
     private static ApiManager instance;
 
     public static void initialize(String token) {
-        instance = new ApiManager(token);
+        if(instance == null) {
+            instance = new ApiManager(token);
+        }
+        else
+            Timber.d("Refusing to overwrite ApiManager in second call to initialize.");
     }
 
     public static ApiManager getInstance() {

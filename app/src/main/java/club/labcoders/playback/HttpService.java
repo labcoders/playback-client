@@ -12,15 +12,42 @@ import club.labcoders.playback.api.ApiManager;
 import club.labcoders.playback.api.PlaybackApi;
 import club.labcoders.playback.api.models.AudioRecording;
 import club.labcoders.playback.api.models.RecordingMetadata;
+import club.labcoders.playback.db.DatabaseService;
 import rx.Observable;
+import rx.Subscription;
+import rx.subscriptions.CompositeSubscription;
 import timber.log.Timber;
 
 public class HttpService extends Service {
     private PlaybackApi api;
+    private CompositeSubscription subscriptions;
 
     public HttpService() {
-        api = ApiManager.getInstance().getApi();
         Timber.d("Http service constructor called");
+        subscriptions = new CompositeSubscription();
+    }
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        final Subscription sub = new RxServiceBinding<DatabaseService.DatabaseServiceBinder>(
+                this,
+                new Intent(this, DatabaseService.class),
+                Service.BIND_AUTO_CREATE
+        )
+                .binder(true)
+                .map(DatabaseService.DatabaseServiceBinder::getService)
+                .flatMap(DatabaseService::getToken)
+                .subscribe(s -> {
+                    if(s == null) {
+                        Timber.d("No token; not initializing api.");
+                        api = null;
+                    }
+                    Timber.d("Got token; initializing api.");
+                    ApiManager.initialize(s);
+                    api = ApiManager.getInstance().getApi();
+                });
+        subscriptions.add(sub);
     }
 
     public Observable<Integer> upload(AudioRecording rec) {
@@ -41,7 +68,10 @@ public class HttpService extends Service {
     @Nullable
     @Override
     public IBinder onBind(Intent intent) {
-        return new HttpServiceBinder();
+        if(api == null)
+            return null;
+        else
+            return new HttpServiceBinder();
     }
 
     public class HttpServiceBinder extends Binder {
@@ -50,6 +80,7 @@ public class HttpService extends Service {
 
     @Override
     public void onDestroy() {
+        subscriptions.unsubscribe();
         Timber.d("Destroyed HTTP service.");
         super.onDestroy();
     }
