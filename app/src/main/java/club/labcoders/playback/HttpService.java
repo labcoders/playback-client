@@ -30,6 +30,7 @@ public class HttpService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        Timber.d("HTTP Service onCreate called");
         final Subscription sub = new RxServiceBinding<DatabaseService.DatabaseServiceBinder>(
                 this,
                 new Intent(this, DatabaseService.class),
@@ -68,10 +69,7 @@ public class HttpService extends Service {
     @Nullable
     @Override
     public IBinder onBind(Intent intent) {
-        if(api == null)
-            return null;
-        else
-            return new HttpServiceBinder();
+        return new HttpServiceBinder();
     }
 
     public class HttpServiceBinder extends Binder {

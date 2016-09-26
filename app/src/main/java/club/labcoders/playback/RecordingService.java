@@ -121,6 +121,7 @@ public class RecordingService extends Service {
 
     @Override
     public void onCreate() {
+        Timber.d("Audio manager created");
         audioRecord = getAudioManager().newAudioRecord();
 
         snapshotLengthSeconds = DEFAULT_SNAPSHOT_LENGTH;

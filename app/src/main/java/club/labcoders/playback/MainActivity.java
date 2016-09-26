@@ -21,13 +21,14 @@ import android.widget.Toast;
 
 import org.joda.time.DateTime;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.ArrayList;
+import java.util.List;
 
 import butterknife.BindView;
 import butterknife.ButterKnife;
@@ -37,6 +38,7 @@ import club.labcoders.playback.api.PlaybackApi;
 import club.labcoders.playback.api.models.AudioRecording;
 import club.labcoders.playback.api.models.Base64Blob;
 import club.labcoders.playback.api.models.Ping;
+import club.labcoders.playback.api.models.RecordingMetadata;
 import rx.Observable;
 import rx.Subscription;
 import rx.android.schedulers.AndroidSchedulers;
@@ -56,7 +58,7 @@ public class MainActivity extends AppCompatActivity {
     Button recordButton;
 
     @BindView(R.id.availableRecordings)
-    RecyclerView availableRecordings;
+    RecyclerView metadataRecyclerView;
 
     RecordingService recordingService;
     HttpService httpService;
@@ -64,6 +66,9 @@ public class MainActivity extends AppCompatActivity {
     private CompositeSubscription subscriptions;
     private boolean httpServiceIsBound;
     private boolean canUseFineLocation;
+
+    private List<RecordingMetadata> availableRecordings;
+    private RecordingMetadataAdapter mAdapter;
 
     public MainActivity() {
         recordingServiceIsBound = false;
@@ -220,6 +225,18 @@ public class MainActivity extends AppCompatActivity {
         Timber.d("Bound HTTP service");
         httpServiceIsBound = true;
 
+        availableRecordings = new ArrayList<>();
+
+        RecyclerView.LayoutManager layoutManager = new LinearLayoutManager(getApplicationContext());
+        metadataRecyclerView.setLayoutManager(layoutManager);
+
+        mAdapter = new RecordingMetadataAdapter(availableRecordings);
+        metadataRecyclerView.setAdapter(mAdapter);
+
+        // Can add ItemDecoration if i want.
+
+        metadataRecyclerView.setItemAnimator(new DefaultItemAnimator());
+
         // Check if we have fine location permissions, and set a flag to show that we do/don't.
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, FINE_LOCATION_PERMISSION_REQUEST);
@@ -255,21 +272,22 @@ public class MainActivity extends AppCompatActivity {
             httpService = binder.getService();
             Timber.d("Assigned httpService");
 
-            // Initialize the recycler view.
+            // Populate the recycler view.
             httpService.getMetadata()
                     .subscribeOn(Schedulers.io())
                     .observeOn(AndroidSchedulers.mainThread())
                     .subscribe(list -> {
-                        RecyclerView.LayoutManager layoutManager = new LinearLayoutManager(getApplicationContext());
-                        availableRecordings.setLayoutManager(layoutManager);
-
-                        RecordingMetadataAdapter adapter = new RecordingMetadataAdapter(list);
-                        availableRecordings.setAdapter(adapter);
-
-                        // Can add ItemDecoration if i want.
-
-                        availableRecordings.setItemAnimator(new DefaultItemAnimator());
-                    });
+                        Timber.d(list.toString());
+                        for (RecordingMetadata d : list) {
+                            availableRecordings.add(d);
+                        }
+                        mAdapter.notifyDataSetChanged();
+                        Timber.d("Updated and populated dataset for metadata list with %d items.", list.size());
+                    },
+                            err -> {
+                                Timber.e("Error while retrieving recording metadata");
+                                err.printStackTrace();
+                            });
 
         }
 
@@ -285,6 +303,7 @@ public class MainActivity extends AppCompatActivity {
         public void onServiceConnected(ComponentName name, IBinder service) {
             final RecordingService.RecordingServiceBinder binder = (RecordingService.RecordingServiceBinder)service;
             recordingService = binder.getService();
+            Timber.d("Assigned recording service");
 
             final Subscription sub = recordingService.recordingState
                     .subscribeOn(Schedulers.io())

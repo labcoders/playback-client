@@ -102,7 +102,6 @@ public class AuthActivity extends Activity {
 
     @OnClick(R.id.loginButton)
     public synchronized void login() {
-        Timber.d("click");
         if(authSubscription != null && !authSubscription.isUnsubscribed()) {
             Timber.d("Ignoring multiple concurrent login attempts.");
             return;
