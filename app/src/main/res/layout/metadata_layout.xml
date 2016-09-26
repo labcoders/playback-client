@@ -2,32 +2,33 @@
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content">
+
     <TextView
-        android:id="@+id/label"
+        android:id="@+id/id"
+        android:layout_alignParentStart="true"
         android:layout_height="wrap_content"
-        android:layout_width="match_parent" />
+        android:layout_marginLeft="18dip"
+        android:layout_marginTop="9dip"
+        android:layout_marginBottom="9dip"
+        android:layout_width="wrap_content" />
 
     <TextView
         android:id="@+id/timestamp"
-        android:layout_toStartOf="@id/label"
+        android:layout_marginLeft="18dip"
+        android:layout_marginTop="9dip"
+        android:layout_marginBottom="9dip"
+        android:layout_toEndOf="@id/id"
         android:layout_height="wrap_content"
-        android:layout_width="match_parent" />
-
-    <TextView
-        android:id="@+id/tags"
-        android:layout_below="@id/label"
-        android:layout_height="wrap_content"
-        android:layout_width="match_parent" />
-    <TextView
-        android:id="@+id/location"
-        android:layout_toRightOf="@id/label"
-        android:layout_height="wrap_content"
-        android:layout_width="match_parent" />
+        android:layout_width="wrap_content" />
 
     <TextView
         android:id="@+id/duration"
-        android:layout_toRightOf="@id/location"
+        android:layout_marginLeft="18dip"
+        android:layout_marginTop="9dip"
+        android:layout_marginBottom="9dip"
+        android:layout_toEndOf="@id/timestamp"
+        android:layout_alignParentEnd="true"
         android:layout_height="wrap_content"
-        android:layout_width="match_parent" />
+        android:layout_width="wrap_content" />
 
 </RelativeLayout>

@@ -230,12 +230,8 @@ public class MainActivity extends AppCompatActivity {
         RecyclerView.LayoutManager layoutManager = new LinearLayoutManager(getApplicationContext());
         metadataRecyclerView.setLayoutManager(layoutManager);
 
-        mAdapter = new RecordingMetadataAdapter(availableRecordings);
+        mAdapter = new RecordingMetadataAdapter(availableRecordings, this);
         metadataRecyclerView.setAdapter(mAdapter);
-
-        // Can add ItemDecoration if i want.
-
-        metadataRecyclerView.setItemAnimator(new DefaultItemAnimator());
 
         // Check if we have fine location permissions, and set a flag to show that we do/don't.
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PERMISSION_GRANTED) {
@@ -279,10 +275,12 @@ public class MainActivity extends AppCompatActivity {
                     .subscribe(list -> {
                         Timber.d(list.toString());
                         for (RecordingMetadata d : list) {
+                            Timber.d("Metadata contains: duration: %s, timestamp: %s", d.getDuration(), d.getTimestamp());
                             availableRecordings.add(d);
                         }
                         mAdapter.notifyDataSetChanged();
                         Timber.d("Updated and populated dataset for metadata list with %d items.", list.size());
+                        Timber.d("Now recycler view contains %d items.", mAdapter.getItemCount());
                     },
                             err -> {
                                 Timber.e("Error while retrieving recording metadata");
