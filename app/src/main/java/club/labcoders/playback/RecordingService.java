@@ -224,16 +224,8 @@ public class RecordingService extends Service {
         return recordingServiceStateSubject.asObservable();
     }
 
-    /**
-     * Starts recording. This causes a state transition from
-     * {@link RecordingServiceState#NOT_RECORDING} to
-     * {@link RecordingServiceState#RECORDING}.
-     *
-     * If the service is already recording, then calling this method is a no-op.
-     *
-     * @throws MissingAudioRecordPermissionException
-     */
-    public void startRecording() throws MissingAudioRecordPermissionException {
+    public void initializeRecording()
+            throws MissingAudioRecordPermissionException {
         if(!hasAudioPermission()) {
             stopRecording();
             setRecordingState(RecordingServiceState.MISSING_AUDIO_PERMISSION);
@@ -245,6 +237,19 @@ public class RecordingService extends Service {
 
         if(audioRecord == null)
             audioRecord = getAudioManager().newAudioRecord();
+    }
+
+    /**
+     * Starts recording. This causes a state transition from
+     * {@link RecordingServiceState#NOT_RECORDING} to
+     * {@link RecordingServiceState#RECORDING}.
+     *
+     * If the service is already recording, then calling this method is a no-op.
+     *
+     * @throws MissingAudioRecordPermissionException
+     */
+    public void startRecording() throws MissingAudioRecordPermissionException {
+        initializeRecording();
 
         if(audioRecord != null
                 && audioRecord.getRecordingState() == AudioRecord.RECORDSTATE_RECORDING) {
@@ -417,6 +422,20 @@ public class RecordingService extends Service {
     @Override
     public RecordingServiceBinder onBind(Intent intent) {
         return new RecordingServiceBinder();
+    }
+
+    public void checkState() {
+        if(!hasAudioPermission()) {
+            setRecordingState(RecordingServiceState.MISSING_AUDIO_PERMISSION);
+        }
+        else {
+            setRecordingState(
+                    isRecording()
+                            ? RecordingServiceState.RECORDING
+                            : RecordingServiceState.NOT_RECORDING
+
+            );
+        }
     }
 
     class RecordingServiceBinder extends Binder {

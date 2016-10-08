@@ -50,7 +50,8 @@ import static android.content.pm.PackageManager.PERMISSION_GRANTED;
 
 public class MainActivity extends AppCompatActivity {
     private static final int FINE_LOCATION_PERMISSION_REQUEST = 0;
-    private static final int RECORD_AUDIO_REQUEST = 1;
+    private static final int RECORD_AUDIO_AND_START_REQUEST = 1;
+    private static final int RECORD_AUDIO_REQUEST = 2;
 
     @BindView(R.id.statusText)
     TextView statusText;
@@ -78,10 +79,20 @@ public class MainActivity extends AppCompatActivity {
 
     @OnClick(R.id.uploadButton)
     public void onRecordButtonClick() {
-        switch(recordingService.getState()) {
+        switch (recordingService.getState()) {
             case MISSING_AUDIO_PERMISSION:
-
+                requestRecordingPrivilege();
+                break;
+            case RECORDING:
+                takeSnapshot();
+                break;
+            case NOT_RECORDING:
+                startRecording();
+                break;
         }
+    }
+
+    private void takeSnapshot() {
         double length;
 
         if (recordingService == null) {
@@ -285,7 +296,11 @@ public class MainActivity extends AppCompatActivity {
                 Manifest.permission.RECORD_AUDIO
         );
         if(grant == PackageManager.PERMISSION_DENIED) {
-            
+            ActivityCompat.requestPermissions(
+                    this,
+                    new String[] {Manifest.permission.RECORD_AUDIO},
+                    RECORD_AUDIO_REQUEST
+            );
         }
     }
 
@@ -305,7 +320,7 @@ public class MainActivity extends AppCompatActivity {
             ActivityCompat.requestPermissions(
                     MainActivity.this,
                     new String[] {Manifest.permission.RECORD_AUDIO},
-                    RECORD_AUDIO_REQUEST
+                    RECORD_AUDIO_AND_START_REQUEST
             );
             Timber.d("Requested audio recording permission.");
         }
@@ -409,9 +424,18 @@ public class MainActivity extends AppCompatActivity {
             case FINE_LOCATION_PERMISSION_REQUEST:
                 canUseFineLocation =  (grantResults[0] == PERMISSION_GRANTED);
                 break;
-            case RECORD_AUDIO_REQUEST:
+            case RECORD_AUDIO_AND_START_REQUEST:
                 if(grantResults[0] == PERMISSION_GRANTED) {
                     startRecording();
+                }
+                else {
+                    Timber.d("User refused audio recording permission.");
+                }
+                break;
+            case RECORD_AUDIO_REQUEST:
+                if(grantResults[0] == PERMISSION_GRANTED) {
+                    Timber.d("Yay.");
+                    recordingService.checkState();
                 }
                 else {
                     Timber.d("User refused audio recording permission.");
