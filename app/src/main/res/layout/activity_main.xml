@@ -24,7 +24,7 @@
 
     <Button
         android:id="@+id/pingButton"
-        android:layout_toRightOf="@id/uploadButton"
+        android:layout_below="@id/uploadButton"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="@string/pingLabel"/>
