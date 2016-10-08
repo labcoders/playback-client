@@ -14,6 +14,7 @@ import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
+import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -62,6 +63,9 @@ public class MainActivity extends AppCompatActivity {
     @BindView(R.id.availableRecordings)
     RecyclerView metadataRecyclerView;
 
+    @BindView(R.id.stopRecordingButton)
+    Button stopRecordingButton;
+
     RecordingService recordingService;
     HttpService httpService;
     private boolean recordingServiceIsBound;
@@ -90,6 +94,21 @@ public class MainActivity extends AppCompatActivity {
                 startRecording();
                 break;
         }
+    }
+
+    @OnClick(R.id.stopRecordingButton)
+    public void onStopRecordingButtonClick() {
+        switch(recordingService.getState()) {
+            case RECORDING:
+                stopRecording();
+                break;
+            default:
+                Timber.e("Stop recording pressed but not recording!");
+        }
+    }
+
+    private void stopRecording() {
+        recordingService.stopRecording();
     }
 
     private void takeSnapshot() {
@@ -127,8 +146,6 @@ public class MainActivity extends AppCompatActivity {
         }
 
         byte[] rawAudio = buf.array();
-
-        Encoder enc = new Encoder();
 
         Observable.just(rawAudio)
                 .doOnNext(
@@ -377,11 +394,17 @@ public class MainActivity extends AppCompatActivity {
                                     case RECORDING:
                                         statusText.setText(R.string.recordingStatusRecording);
                                         recordButton.setText(R.string.recordButtonTakeSnapshot);
+                                        stopRecordingButton.setVisibility(
+                                                View.VISIBLE
+                                        );
                                         break;
                                     case NOT_RECORDING:
                                         statusText.setText(R.string.recordingStatusNotRecording);
                                         recordButton.setText(
                                                 R.string.recordButtonStartRecording
+                                        );
+                                        stopRecordingButton.setVisibility(
+                                                View.GONE
                                         );
                                         break;
                                     case MISSING_AUDIO_PERMISSION:
@@ -390,6 +413,9 @@ public class MainActivity extends AppCompatActivity {
                                         );
                                         recordButton.setText(
                                                 R.string.recordButtonPermitRecording
+                                        );
+                                        stopRecordingButton.setVisibility(
+                                                View.GONE
                                         );
                                         break;
                                     default:

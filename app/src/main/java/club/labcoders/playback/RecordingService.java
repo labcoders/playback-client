@@ -72,7 +72,7 @@ public class RecordingService extends Service {
      * {@link #snapshotLengthSeconds} seconds of audio.
      */
     private int maxAudioBufferQueueLength;
-    private final CompositeSubscription subscriptions;
+    private CompositeSubscription subscriptions;
 
     /**
      * The size of the buffer that we fill when polling the microphone.
@@ -120,7 +120,6 @@ public class RecordingService extends Service {
     public RecordingService() {
         audioBufferQueue = new ConcurrentLinkedQueue<>();
         queueLock = new ReentrantLock(true);
-        subscriptions = new CompositeSubscription();
         audioBufferQueueLength = new AtomicInteger(0);
         recordingServiceStateSubject = BehaviorSubject.create();
         setRecordingState(RecordingServiceState.NOT_RECORDING);
@@ -259,6 +258,8 @@ public class RecordingService extends Service {
 
         Timber.d("Starting RecordingService.");
 
+        subscriptions = new CompositeSubscription();
+
         snapshotLengthSeconds = DEFAULT_SNAPSHOT_LENGTH;
         snapshotLengthSamples
                 = snapshotLengthSeconds * getAudioManager().getSampleRate();
@@ -380,13 +381,20 @@ public class RecordingService extends Service {
     }
 
     public void stopRecording() {
+        if(subscriptions != null) {
+            subscriptions.unsubscribe();
+            subscriptions = null;
+        }
+        if(audioRecord != null) {
+            audioRecord.release();
+            audioRecord = null;
+        }
         setRecordingState(RecordingServiceState.NOT_RECORDING);
     }
 
     @Override
     public synchronized int onStartCommand(
             Intent intent, int flags, int startId) {
-
         return START_STICKY;
     }
 

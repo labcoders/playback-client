@@ -13,4 +13,5 @@
     <string name="recordButtonStartRecording">Start recording.</string>
     <string name="recordStatusNoPermission">Missing recording permission.</string>
     <string name="recordButtonPermitRecording">Allow recording</string>
+    <string name="stopRecording">Stop recording</string>
 </resources>
