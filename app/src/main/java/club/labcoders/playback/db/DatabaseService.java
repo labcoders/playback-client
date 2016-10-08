@@ -61,6 +61,12 @@ public class DatabaseService extends Service {
         return new ObservableCursor<S>(cursor).observe(adapter);
     }
 
+    /**
+     * Performs a {@link SimpleInsertOperation}, and returns the ID of the
+     * inserted row.
+     * @param operation The insert operation to perform.
+     * @return The ID of the inserted row.
+     */
     public Observable<Long> observeSimpleInsertOperation(
             SimpleInsertOperation operation
     ) {

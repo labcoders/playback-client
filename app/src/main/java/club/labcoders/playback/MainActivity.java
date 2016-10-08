@@ -201,17 +201,8 @@ public class MainActivity extends AppCompatActivity {
                 })
                 .flatMap(id -> {
                     remoteId.setValue(id);
-                    return new RxServiceBinding
-                            <DatabaseService.DatabaseServiceBinder>(
-                            MainActivity.this,
-                            new Intent(
-                                    MainActivity.this,
-                                    DatabaseService.class
-                            ),
-                            Service.BIND_AUTO_CREATE)
-                            .binder(true);
+                    return observeDatabaseService(true);
                 })
-                .map(DatabaseService.DatabaseServiceBinder::getService)
                 .flatMap(databaseService -> databaseService
                         .observeSimpleInsertOperation(
                                 new DbAudioRecording
@@ -232,8 +223,8 @@ public class MainActivity extends AppCompatActivity {
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(
-                        count -> {
-                            Timber.d("Inserted %d rows", count);
+                        id -> {
+                            Timber.d("Inserted local rows id %d", id);
                             Timber.d("Uploaded raw with id " +
                                     "%d", remoteId.getValue());
                             Toast.makeText(
@@ -243,13 +234,29 @@ public class MainActivity extends AppCompatActivity {
                                             remoteId.getValue()
                                     ),
                                     Toast.LENGTH_LONG
-                            ) .show();
+                            ).show();
+
+                            updateMetadataListing();
                         },
                         err -> {
                             Timber.e("Failed to upload recording.");
                             err.printStackTrace();
                         }
                 );
+    }
+
+    private Observable<DatabaseService> observeDatabaseService(
+            boolean cleanup
+    ) {
+        return new RxServiceBinding<DatabaseService.DatabaseServiceBinder>(
+                this,
+                new Intent(
+                        this,
+                        DatabaseService.class
+                ),
+                Service.BIND_AUTO_CREATE)
+                .binder(true)
+                .map(DatabaseService.DatabaseServiceBinder::getService);
     }
 
     @OnClick(R.id.pingButton)
@@ -301,12 +308,7 @@ public class MainActivity extends AppCompatActivity {
         startService(httpIntent);
         Timber.d("Started HTTP service.");
         bindService(httpIntent, httpConnection, Context.BIND_IMPORTANT);
-        final Subscription sub = new RxServiceBinding<HttpService.HttpServiceBinder>(
-                this,
-                httpIntent,
-                Context.BIND_IMPORTANT)
-                .binder(true)
-                .map(HttpService.HttpServiceBinder::getService)
+        final Subscription sub = observeHttpService(true)
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(
                         this::withHttpService,
@@ -343,6 +345,18 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private Observable<HttpService> observeHttpService(boolean cleanup) {
+        return new RxServiceBinding<HttpService.HttpServiceBinder>(
+                this,
+                new Intent(
+                        this,
+                        HttpService.class
+                ),
+                Context.BIND_AUTO_CREATE)
+                .binder(true)
+                .map(HttpService.HttpServiceBinder::getService);
+    }
+
     private void withoutHttpService(Throwable error) {
         Timber.e("httpService unavailable");
         Toast.makeText(this, "Unable to connect to server.", Toast.LENGTH_LONG)
@@ -362,6 +376,10 @@ public class MainActivity extends AppCompatActivity {
         else if(httpService == null)
             Timber.d("Reusing stored httpservice in withHttpService");
 
+        updateMetadataListing();
+    }
+
+    private void updateMetadataListing() {
         // Populate the recycler view.
         final Box<Subscription> box = new Box<>();
         final Subscription sub = this.httpService.getMetadata()
@@ -384,6 +402,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void setMetadataListing(List<RecordingMetadata> list) {
         Timber.d(list.toString());
+        availableRecordings.clear();
         for (final RecordingMetadata d : list) {
             Timber.d("Metadata contains: duration: %s, timestamp: %s", d.getDuration(), d.getTimestamp());
             availableRecordings.add(d);
