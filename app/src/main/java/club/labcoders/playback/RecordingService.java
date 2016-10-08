@@ -9,9 +9,6 @@ import android.os.Binder;
 import android.support.v4.content.ContextCompat;
 
 import java.nio.ShortBuffer;
-import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 
 import rx.Observable;
@@ -26,7 +23,7 @@ public class RecordingService extends Service {
      * Milliseconds between runs of the buffer GC, which removes chunks from
      * the {@link #audioBufferQueue}.
      */
-    public static final long GC_PERIOD = 1000;
+    // public static final long GC_PERIOD = 1000;
 
     /**
      * Milliseconds between emissions by the {@link #recordingServiceStateSubject} observable.
@@ -47,7 +44,13 @@ public class RecordingService extends Service {
      * order to keep the length of the queue below
      * {@link #maxAudioBufferQueueLength}.
      */
-    public final Queue<short[]> audioBufferQueue;
+    // public final Queue<short[]> audioBufferQueue;
+
+    /**
+     * Circular buffer that we use to hold the received short
+     * arrays from the microphone.
+     */
+    public CircularShortBuffer audioCircularBuffer;
 
     /**
      * A lock used for read access to the queue.
@@ -113,14 +116,15 @@ public class RecordingService extends Service {
      * Approximates the length of the audioBufferQueue. The queue is no shorter
      * than this amount at any given time.
      */
-    private AtomicInteger audioBufferQueueLength;
+    // private AtomicInteger audioBufferQueueLength;
 
     private RecordingServiceState recordingServiceState;
 
     public RecordingService() {
-        audioBufferQueue = new ConcurrentLinkedQueue<>();
+        // audioBufferQueue = new ConcurrentLinkedQueue<>();
         queueLock = new ReentrantLock(true);
-        audioBufferQueueLength = new AtomicInteger(0);
+        subscriptions = new CompositeSubscription();
+        // audioBufferQueueLength = new AtomicInteger(0);
         recordingServiceStateSubject = BehaviorSubject.create();
         setRecordingState(RecordingServiceState.NOT_RECORDING);
     }
@@ -174,16 +178,12 @@ public class RecordingService extends Service {
             Timber.d("Locking audio buffer queue.");
             queueLock.lock();
             Timber.d("Doing pre-linearization GC.");
-            queueGc();
-            final int bufCount = audioBufferQueueLength.get();
+            // queueGc();
+            final int bufCount = audioCircularBuffer.getSize();
             result = ShortBuffer.allocate(bufCount * chunkBufferSize);
-            int processedBufferCount = 0;
             final long startTime = System.nanoTime();
-            for (short[] buffer : audioBufferQueue) {
-                if (processedBufferCount >= bufCount)
-                    break;
+            for (short[] buffer : audioCircularBuffer.toArray()) {
                 result.put(buffer);
-                processedBufferCount++;
                 processedShorts += buffer.length;
             }
             final long endTime = System.nanoTime();
@@ -267,6 +267,7 @@ public class RecordingService extends Service {
                 = getAudioManager().getBufferSize() / getAudioManager().getBytesPerSample();
         maxAudioBufferQueueLength
                 = snapshotLengthSamples / chunkBufferSize;
+        audioCircularBuffer = new CircularShortBuffer(maxAudioBufferQueueLength);
 
         Timber.d(
                 "Configured RecordingService: " +
@@ -340,9 +341,13 @@ public class RecordingService extends Service {
                         );
                         return;
                 }
-                final short[] finalBuffer = new short[readOut];
-                System.arraycopy(audioBuffer, 0, finalBuffer, 0, readOut);
-                subscriber.onNext(finalBuffer);
+                if (readOut == chunkBufferSize) {
+                    subscriber.onNext(audioBuffer);
+                } else {
+                    final short[] finalBuffer = new short[readOut];
+                    System.arraycopy(audioBuffer, 0, finalBuffer, 0, readOut);
+                    subscriber.onNext(finalBuffer);
+                }
             }
 
             Timber.d("Recording stream ended.");
@@ -353,29 +358,37 @@ public class RecordingService extends Service {
                 .subscribeOn(Schedulers.io())
                 .observeOn(Schedulers.io())
                 .subscribe(shorts -> {
-                    audioBufferQueue.add(shorts);
-                    audioBufferQueueLength.incrementAndGet();
+                    // audioBufferQueue.add(shorts);
+                    try {
+                        queueLock.lock();
+                        audioCircularBuffer.add(shorts);
+                    } finally {
+                        if (queueLock.isHeldByCurrentThread()) {
+                            queueLock.unlock();
+                        }
+                    }
+                    // audioBufferQueueLength.incrementAndGet();
                 });
         subscriptions.add(producer);
 
-        final Observable<Void> gcTimer = Observable.create(subscriber -> {
-            while (true) {
-                subscriber.onNext(null);
-                try {
-                    Thread.sleep(GC_PERIOD);
-                } catch (InterruptedException e) {
-                    subscriber.onError(e);
-                    return;
-                }
-            }
-        });
+        // final Observable<Void> gcTimer = Observable.create(subscriber -> {
+        //     while (true) {
+        //         subscriber.onNext(null);
+        //         try {
+        //             Thread.sleep(GC_PERIOD);
+        //         } catch (InterruptedException e) {
+        //             subscriber.onError(e);
+        //             return;
+        //         }
+        //     }
+        // });
 
-        subscriptions.add(
-                gcTimer.subscribeOn(Schedulers.io())
-                        .observeOn(Schedulers.io())
-                        .doOnNext(aVoid -> Timber.d("GC tick."))
-                        .subscribe(aVoid -> queueGc())
-        );
+        // subscriptions.add(
+        //         gcTimer.subscribeOn(Schedulers.io())
+        //                 .observeOn(Schedulers.io())
+        //                 .doOnNext(aVoid -> Timber.d("GC tick."))
+        //                 .subscribe(aVoid -> queueGc())
+        // );
 
         setRecordingState(RecordingServiceState.RECORDING);
     }
@@ -404,20 +417,20 @@ public class RecordingService extends Service {
      * This will acquire the queue lock, so that other garbage collection
      * processes or linearization processes cannot be executing concurrently.
      */
-    private void queueGc() {
-        int collected = 0;
-        while (audioBufferQueueLength.get() >
-                maxAudioBufferQueueLength) {
-            try {
-                queueLock.lock();
-                audioBufferQueue.remove();
-                audioBufferQueueLength.decrementAndGet();
-                collected++;
-            } finally {
-                queueLock.unlock();
-            }
-        }
-    }
+    // private void queueGc() {
+    //     int collected = 0;
+    //     while (audioBufferQueueLength.get() >
+    //             maxAudioBufferQueueLength) {
+    //         try {
+    //             queueLock.lock();
+    //             audioBufferQueue.remove();
+    //             audioBufferQueueLength.decrementAndGet();
+    //             collected++;
+    //         } finally {
+    //             queueLock.unlock();
+    //         }
+    //     }
+    // }
 
     @Override
     public void onDestroy() {
