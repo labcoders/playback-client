@@ -1,4 +1,4 @@
-package club.labcoders.playback;
+package club.labcoders.playback.misc;
 
 import android.content.ComponentName;
 import android.content.Context;

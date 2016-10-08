@@ -1,4 +1,4 @@
-package club.labcoders.playback;
+package club.labcoders.playback.misc;
 
 import rx.functions.Func1;
 

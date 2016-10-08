@@ -134,8 +134,9 @@ public class AudioManager {
             }
         }
 
-        if(!initialized)
-            throw new RuntimeException("Failed to initialize AudioRecord");
+        if(!initialized) {
+            throw new AudioInitializationFailedException();
+        }
 
         Timber.d(
                 "Successfully initialized audio manager. " +
@@ -158,5 +159,9 @@ public class AudioManager {
 
     public int getBufferSize() {
         return bufferSize;
+    }
+
+    public static class AudioInitializationFailedException extends
+            RuntimeException {
     }
 }

@@ -1,4 +1,4 @@
-package club.labcoders.playback;
+package club.labcoders.playback.misc;
 
 /**
  * Created by jake on 2016-09-18.

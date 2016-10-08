@@ -13,6 +13,7 @@ import club.labcoders.playback.api.PlaybackApi;
 import club.labcoders.playback.api.models.AudioRecording;
 import club.labcoders.playback.api.models.RecordingMetadata;
 import club.labcoders.playback.db.DatabaseService;
+import club.labcoders.playback.misc.RxServiceBinding;
 import rx.Observable;
 import rx.Subscription;
 import rx.subscriptions.CompositeSubscription;

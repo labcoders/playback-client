@@ -1,11 +1,13 @@
 package club.labcoders.playback;
 
+import android.Manifest;
 import android.app.Service;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.media.AudioRecord;
 import android.os.Binder;
+import android.support.v4.content.ContextCompat;
 
-import java.nio.ByteBuffer;
 import java.nio.ShortBuffer;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -15,6 +17,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import rx.Observable;
 import rx.Subscription;
 import rx.schedulers.Schedulers;
+import rx.subjects.BehaviorSubject;
 import rx.subscriptions.CompositeSubscription;
 import timber.log.Timber;
 
@@ -26,7 +29,7 @@ public class RecordingService extends Service {
     public static final long GC_PERIOD = 1000;
 
     /**
-     * Milliseconds between emissions by the {@link #recordingState} observable.
+     * Milliseconds between emissions by the {@link #recordingServiceStateSubject} observable.
      */
     public static final long STATE_POLL_PERIOD = 250;
 
@@ -78,17 +81,20 @@ public class RecordingService extends Service {
      * {@link AudioManager}.
      */
     public int chunkBufferSize;
+
     /**
      * A hot observable connected to the microphone. This observable obtains
      * a value when the service is started. It emits buffers containing the
      * raw samples read from the microphone.
      */
     public Observable<short[]> audioStream;
+
     /**
-     * A hot observable connected to the microphone. It emits the recording
-     * state of the microphone every {@link #STATE_POLL_PERIOD} milliseconds.
+     * A cold observable related to the microphone. It emits the recording
+     * state of the recording service every time the state changes.
      */
-    public Observable<Integer> recordingState;
+    private BehaviorSubject<RecordingServiceState> recordingServiceStateSubject;
+
     /**
      * The duration, in seconds, of an audio snapshot created by
      * {@link #getBufferedAudio()}.
@@ -102,27 +108,151 @@ public class RecordingService extends Service {
     public int snapshotLengthSamples;
 
     AudioRecord audioRecord;
+
     /**
      * Approximates the length of the audioBufferQueue. The queue is no shorter
      * than this amount at any given time.
      */
     private AtomicInteger audioBufferQueueLength;
 
+    private RecordingServiceState recordingServiceState;
+
     public RecordingService() {
         audioBufferQueue = new ConcurrentLinkedQueue<>();
         queueLock = new ReentrantLock(true);
         subscriptions = new CompositeSubscription();
         audioBufferQueueLength = new AtomicInteger(0);
+        recordingServiceStateSubject = BehaviorSubject.create();
+        setRecordingState(RecordingServiceState.NOT_RECORDING);
+    }
+
+    private void setRecordingState(RecordingServiceState state) {
+        recordingServiceState = state;
+        publishCurrentState();
+    }
+
+    private void publishCurrentState() {
+        recordingServiceStateSubject.onNext(recordingServiceState);
+    }
+
+    public RecordingServiceState getState() {
+        return recordingServiceState;
     }
 
     private AudioManager getAudioManager() {
         return AudioManager.getInstance();
     }
 
+    private boolean hasAudioPermission() {
+        return ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED;
+    }
+
     @Override
     public void onCreate() {
-        Timber.d("Audio manager created");
-        audioRecord = getAudioManager().newAudioRecord();
+        Timber.d("Creating recording service");
+    }
+
+    /**
+     * Merges a given number of linked buffers in the audioBufferQueue into a
+     * single array. New buffers may be added to the queue concurrently;
+     * these buffers will not be added to the queue.
+     *
+     * @return A single array with the merged contents of all the linked
+     * buffers in the audioBufferQueue. Returns null if the recording service
+     * is not recording.
+     */
+    public synchronized short[] getBufferedAudio() {
+        if(getState() != RecordingServiceState.RECORDING)
+            return null;
+
+        Timber.d("Starting audio buffer queue linearization.");
+        ShortBuffer result = null;
+        int processedShorts = 0;
+        try {
+            Timber.d("Locking audio buffer queue.");
+            queueLock.lock();
+            Timber.d("Doing pre-linearization GC.");
+            queueGc();
+            final int bufCount = audioBufferQueueLength.get();
+            result = ShortBuffer.allocate(bufCount * chunkBufferSize);
+            int processedBufferCount = 0;
+            final long startTime = System.nanoTime();
+            for (short[] buffer : audioBufferQueue) {
+                if (processedBufferCount >= bufCount)
+                    break;
+                result.put(buffer);
+                processedBufferCount++;
+                processedShorts += buffer.length;
+            }
+            final long endTime = System.nanoTime();
+            final long delta = (endTime - startTime) / (long) 1e3; // microseconds
+
+            Timber.d("Audio buffer queue linearized in %d microseconds.",
+                    delta);
+        } finally {
+            if (queueLock.isHeldByCurrentThread())
+                queueLock.unlock();
+        }
+        final short[] finalResult = new short[processedShorts];
+        System.arraycopy(
+                result.array(),
+                0,
+                finalResult,
+                0,
+                finalResult.length
+        );
+        return finalResult;
+    }
+
+    /**
+     * Gets the recording state of the underlying AudioRecord object. This
+     * should generally be "true" if {@link #getState()} returns
+     * {@link RecordingServiceState#RECORDING}.
+     *
+     * @return Whether the underlying {@link AudioRecord} object is recording.
+     */
+    public boolean isRecording() {
+        return audioRecord != null &&
+                audioRecord.getRecordingState()
+                        == AudioRecord.RECORDSTATE_RECORDING;
+    }
+
+    public Observable<RecordingServiceState> observeState() {
+        return recordingServiceStateSubject.asObservable();
+    }
+
+    /**
+     * Starts recording. This causes a state transition from
+     * {@link RecordingServiceState#NOT_RECORDING} to
+     * {@link RecordingServiceState#RECORDING}.
+     *
+     * If the service is already recording, then calling this method is a no-op.
+     *
+     * @throws MissingAudioRecordPermissionException
+     */
+    public void startRecording() throws MissingAudioRecordPermissionException {
+        if(!hasAudioPermission()) {
+            stopRecording();
+            setRecordingState(RecordingServiceState.MISSING_AUDIO_PERMISSION);
+            throw new MissingAudioRecordPermissionException();
+        }
+
+        if(getState() == RecordingServiceState.RECORDING)
+            return;
+
+        if(audioRecord == null)
+            audioRecord = getAudioManager().newAudioRecord();
+
+        if(audioRecord != null
+                && audioRecord.getRecordingState() == AudioRecord.RECORDSTATE_RECORDING) {
+            Timber.d("Already recording; ignoring repeated request.");
+            return;
+        }
+
+        Timber.d("Starting RecordingService.");
 
         snapshotLengthSeconds = DEFAULT_SNAPSHOT_LENGTH;
         snapshotLengthSamples
@@ -134,8 +264,8 @@ public class RecordingService extends Service {
 
         Timber.d(
                 "Configured RecordingService: " +
-                "snapshot length %d sec, %d samples " +
-                "chunk buffer size %d, so %d chunks max in ABQ",
+                        "snapshot length %d sec, %d samples " +
+                        "chunk buffer size %d, so %d chunks max in ABQ",
                 snapshotLengthSeconds,
                 snapshotLengthSamples,
                 chunkBufferSize,
@@ -159,11 +289,6 @@ public class RecordingService extends Service {
                     == AudioRecord.RECORDSTATE_RECORDING) {
                 lastTime = thisTime;
                 thisTime = System.nanoTime();
-//                if(lastTime != 0)
-//                    Timber.d(
-//                            "Time since last record: %.2f ms",
-//                            (thisTime - lastTime) / 1000000.
-//                    );
 
                 final short[] audioBuffer = new short[chunkBufferSize];
                 final int readOut = audioRecord.read(
@@ -218,94 +343,6 @@ public class RecordingService extends Service {
             subscriber.onCompleted();
         });
 
-        recordingState = Observable.create(subscriber -> {
-            while (audioRecord.getState() != AudioRecord.STATE_UNINITIALIZED) {
-                subscriber.onNext(audioRecord.getRecordingState());
-                try {
-                    Thread.sleep(STATE_POLL_PERIOD);
-                } catch (InterruptedException e) {
-                    subscriber.onError(e);
-                }
-            }
-            Timber.d("Recording state monitor died.");
-            subscriber.onCompleted();
-        });
-    }
-
-    /**
-     * Merges a given number of linked buffers in the audioBufferQueue into a
-     * single array. New buffers may be added to the queue concurrently;
-     * these buffers will not be added to the queue.
-     *
-     * @return A single array with the merged contents of all the linked
-     * buffers in the audioBufferQueue.
-     */
-    private short[] linearizeQueue() {
-        Timber.d("Starting audio buffer queue linearization.");
-        ShortBuffer result = null;
-        int processedShorts = 0;
-        try {
-            Timber.d("Locking audio buffer queue.");
-            queueLock.lock();
-            Timber.d("Doing pre-linearization GC.");
-            queueGc();
-            final int bufCount = audioBufferQueueLength.get();
-            result = ShortBuffer.allocate(bufCount * chunkBufferSize);
-            int processedBufferCount = 0;
-            final long startTime = System.nanoTime();
-            for (short[] buffer : audioBufferQueue) {
-                if (processedBufferCount >= bufCount)
-                    break;
-                result.put(buffer);
-                processedBufferCount++;
-                processedShorts += buffer.length;
-            }
-            final long endTime = System.nanoTime();
-            final long delta = (endTime - startTime) / (long) 1e3; // microseconds
-
-            Timber.d("Audio buffer queue linearized in %d microseconds.",
-                    delta);
-        } finally {
-            if (queueLock.isHeldByCurrentThread())
-                queueLock.unlock();
-        }
-        final short[] finalResult = new short[processedShorts];
-        System.arraycopy(
-                result.array(),
-                0,
-                finalResult,
-                0,
-                finalResult.length
-        );
-        return finalResult;
-    }
-
-    /**
-     * Returns a buffer of the last {@link #snapshotLengthSeconds} seconds of
-     * audio.
-     *
-     * @return The recorded audio, if any.
-     */
-    public short[] getBufferedAudio() {
-        // snapshotLengthSamples is the number of samples that make up a
-        // piece of
-        // audio with length snapshotLengthSeconds; dividing by chunkBufferSize
-        // gives us the number of buffers we need to pop to get a sample
-        // array whose represented audio has that length in seconds.
-        return linearizeQueue();
-    }
-
-    @Override
-    public synchronized int onStartCommand(
-            Intent intent, int flags, int startId) {
-        if(audioRecord != null
-                && audioRecord.getRecordingState() == AudioRecord.RECORDSTATE_RECORDING) {
-            Timber.d("Received extra onStartCommand.");
-            return START_STICKY;
-        }
-
-        Timber.d("Starting RecordingService.");
-
         final Subscription producer = audioStream
                 .subscribeOn(Schedulers.io())
                 .observeOn(Schedulers.io())
@@ -326,12 +363,24 @@ public class RecordingService extends Service {
                 }
             }
         });
+
         subscriptions.add(
                 gcTimer.subscribeOn(Schedulers.io())
                         .observeOn(Schedulers.io())
                         .doOnNext(aVoid -> Timber.d("GC tick."))
                         .subscribe(aVoid -> queueGc())
         );
+
+        setRecordingState(RecordingServiceState.RECORDING);
+    }
+
+    public void stopRecording() {
+        setRecordingState(RecordingServiceState.NOT_RECORDING);
+    }
+
+    @Override
+    public synchronized int onStartCommand(
+            Intent intent, int flags, int startId) {
 
         return START_STICKY;
     }
@@ -355,10 +404,6 @@ public class RecordingService extends Service {
                 queueLock.unlock();
             }
         }
-//        if (collected > 0) {
-//            Timber.d("Garbage collected %d chunks.",
-//                    collected);
-//        }
     }
 
     @Override
@@ -378,5 +423,15 @@ public class RecordingService extends Service {
         RecordingService getService() {
             return RecordingService.this;
         }
+    }
+
+    public static class MissingAudioRecordPermissionException
+            extends Exception {
+    }
+
+    public enum RecordingServiceState {
+        RECORDING,
+        NOT_RECORDING,
+        MISSING_AUDIO_PERMISSION,
     }
 }

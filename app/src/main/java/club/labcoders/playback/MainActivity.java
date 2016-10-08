@@ -5,14 +5,13 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
-import android.media.AudioRecord;
+import android.content.pm.PackageManager;
 import android.os.Environment;
 import android.os.IBinder;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
-import android.support.v7.widget.DefaultItemAnimator;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
 import android.widget.Button;
@@ -39,6 +38,7 @@ import club.labcoders.playback.api.models.AudioRecording;
 import club.labcoders.playback.api.models.Base64Blob;
 import club.labcoders.playback.api.models.Ping;
 import club.labcoders.playback.api.models.RecordingMetadata;
+import club.labcoders.playback.misc.BufferOperator;
 import rx.Observable;
 import rx.Subscription;
 import rx.android.schedulers.AndroidSchedulers;
@@ -50,6 +50,7 @@ import static android.content.pm.PackageManager.PERMISSION_GRANTED;
 
 public class MainActivity extends AppCompatActivity {
     private static final int FINE_LOCATION_PERMISSION_REQUEST = 0;
+    private static final int RECORD_AUDIO_REQUEST = 1;
 
     @BindView(R.id.statusText)
     TextView statusText;
@@ -77,100 +78,121 @@ public class MainActivity extends AppCompatActivity {
 
     @OnClick(R.id.uploadButton)
     public void onRecordButtonClick() {
+        switch(recordingService.getState()) {
+            case MISSING_AUDIO_PERMISSION:
+
+        }
         double length;
 
         if (recordingService == null) {
-            Toast.makeText(this, "No recording service.", Toast.LENGTH_SHORT).show();
-        } else if (httpService == null) {
+            Toast.makeText(
+                    this,
+                    "No recording service.",
+                    Toast.LENGTH_SHORT
+            ).show();
+            return;
+        }
+
+        if (httpService == null) {
             Toast.makeText(this, "No HTTP service", Toast.LENGTH_SHORT).show();
-        } else {
-            short[] shorts = recordingService.getBufferedAudio();
+            return;
+        }
 
-            ByteBuffer buf = ByteBuffer.allocate(shorts.length * 2);
-            buf.order(ByteOrder.nativeOrder());
-            for (short s : shorts) {
-                buf.putShort(s);
-            }
+        if(!recordingService.isRecording()) {
+            Toast.makeText(
+                    this,
+                    "Recording service is not recording.",
+                    Toast.LENGTH_SHORT
+            ).show();
+            return;
+        }
 
-            byte[] rawAudio = buf.array();
+        short[] shorts = recordingService.getBufferedAudio();
 
-            Encoder enc = new Encoder();
+        ByteBuffer buf = ByteBuffer.allocate(shorts.length * 2);
+        buf.order(ByteOrder.nativeOrder());
+        for (short s : shorts) {
+            buf.putShort(s);
+        }
 
-            Observable.just(rawAudio)
-                    .doOnNext(
-                            bytes -> {
-                                final File f = new File(
-                                        Environment.getExternalStorageDirectory(),
-                                        "temp.pcm"
-                                );
-                                Timber.d("dumping pcm to %s", f.toString());
-                                try(final FileOutputStream fos
-                                    = new FileOutputStream(f)) {
-                                    fos.write(bytes);
-                                }
-                                catch(FileNotFoundException e) {
-                                    Timber.e("File not found.");
-                                }
-                                catch(IOException e) {
-                                    Timber.e("io error");
-                                }
+        byte[] rawAudio = buf.array();
+
+        Encoder enc = new Encoder();
+
+        Observable.just(rawAudio)
+                .doOnNext(
+                        bytes -> {
+                            final File f = new File(
+                                    Environment.getExternalStorageDirectory(),
+                                    "temp.pcm"
+                            );
+                            Timber.d("dumping pcm to %s", f.toString());
+                            try(final FileOutputStream fos
+                                = new FileOutputStream(f)) {
+                                fos.write(bytes);
                             }
-                    )
+                            catch(FileNotFoundException e) {
+                                Timber.e("File not found.");
+                            }
+                            catch(IOException e) {
+                                Timber.e("io error");
+                            }
+                        }
+                )
 //                    .lift(enc)
 //                    .map(encodedOutput -> encodedOutput.byteArray)
-                    .lift(new BufferOperator())
+                .lift(new BufferOperator())
 //                    .lift(new MonoMuxingOperator(enc))
-                    .flatMap(
-                            bytes -> {
-                                Timber.d(
-                                        "Got muxed byte buffer length %d",
-                                        bytes.length
-                                );
+                .flatMap(
+                        bytes -> {
+                            Timber.d(
+                                    "Got muxed byte buffer length %d",
+                                    bytes.length
+                            );
 
-                                final File f = new File(
-                                        Environment.getExternalStorageDirectory(),
-                                        "temp.mp4"
-                                );
-                                Timber.d("Dumping to %s.", f.getAbsolutePath());
-                                try (final FileOutputStream fos
-                                             = new FileOutputStream(f)) {
-                                    fos.write(bytes);
-                                } catch (IOException e) {
-                                    e.printStackTrace();
-                                }
-
-                                final AudioRecording rec = new AudioRecording(
-                                        DateTime.now(),
-                                        rawAudio.length
-                                                / AudioManager.getInstance().getBytesPerSample()
-                                                / AudioManager.getInstance().getSampleRate(),
-                                        new Base64Blob(bytes)
-                                );
-
-                                return httpService.upload(rec);
+                            final File f = new File(
+                                    Environment.getExternalStorageDirectory(),
+                                    "temp.mp4"
+                            );
+                            Timber.d("Dumping to %s.", f.getAbsolutePath());
+                            try (final FileOutputStream fos
+                                         = new FileOutputStream(f)) {
+                                fos.write(bytes);
+                            } catch (IOException e) {
+                                e.printStackTrace();
                             }
-                    )
-                    .subscribeOn(Schedulers.io())
-                    .observeOn(AndroidSchedulers.mainThread())
-                    .subscribe(
-                            id -> {
-                                Timber.d("Uploaded raw with id " +
-                                        "%d", id);
-                                Toast.makeText(
-                                        MainActivity.this,
-                                        String.format(
-                                                "Uploaded row with id %d",
-                                                id
-                                        ),
-                                        Toast.LENGTH_LONG
-                                ) .show();
-                            },
-                            err -> {
-                                Timber.e("Failed to upload recording.");
-                                err.printStackTrace();
-                            }
-                    );
-        }
+
+                            final AudioRecording rec = new AudioRecording(
+                                    DateTime.now(),
+                                    rawAudio.length
+                                            / AudioManager.getInstance().getBytesPerSample()
+                                            / AudioManager.getInstance().getSampleRate(),
+                                    new Base64Blob(bytes)
+                            );
+
+                            return httpService.upload(rec);
+                        }
+                )
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(
+                        id -> {
+                            Timber.d("Uploaded raw with id " +
+                                    "%d", id);
+                            Toast.makeText(
+                                    MainActivity.this,
+                                    String.format(
+                                            "Uploaded row with id %d",
+                                            id
+                                    ),
+                                    Toast.LENGTH_LONG
+                            ) .show();
+                        },
+                        err -> {
+                            Timber.e("Failed to upload recording.");
+                            err.printStackTrace();
+                        }
+                );
     }
 
     @OnClick(R.id.pingButton)
@@ -227,7 +249,8 @@ public class MainActivity extends AppCompatActivity {
 
         availableRecordings = new ArrayList<>();
 
-        RecyclerView.LayoutManager layoutManager = new LinearLayoutManager(getApplicationContext());
+        RecyclerView.LayoutManager layoutManager
+                = new LinearLayoutManager(getApplicationContext());
         metadataRecyclerView.setLayoutManager(layoutManager);
 
         mAdapter = new RecordingMetadataAdapter(availableRecordings, this);
@@ -237,12 +260,6 @@ public class MainActivity extends AppCompatActivity {
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, FINE_LOCATION_PERMISSION_REQUEST);
         }
-
-
-    }
-    @Override
-    protected void onStart() {
-        super.onStart();
     }
 
     @Override
@@ -257,8 +274,41 @@ public class MainActivity extends AppCompatActivity {
             unbindService(httpConnection);
             httpServiceIsBound = false;
         }
+
         subscriptions.unsubscribe();
         super.onDestroy();
+    }
+
+    private void requestRecordingPrivilege() {
+        final int grant = ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.RECORD_AUDIO
+        );
+        if(grant == PackageManager.PERMISSION_DENIED) {
+            
+        }
+    }
+
+    private void startRecording() {
+        try {
+            if(recordingService == null) {
+                Timber.e(
+                        "Cannot start recording, because recordingService is " +
+                                "null"
+                );
+                return;
+            }
+
+            recordingService.startRecording();
+        }
+        catch(RecordingService.MissingAudioRecordPermissionException e) {
+            ActivityCompat.requestPermissions(
+                    MainActivity.this,
+                    new String[] {Manifest.permission.RECORD_AUDIO},
+                    RECORD_AUDIO_REQUEST
+            );
+            Timber.d("Requested audio recording permission.");
+        }
     }
 
     final ServiceConnection httpConnection = new ServiceConnection() {
@@ -303,16 +353,35 @@ public class MainActivity extends AppCompatActivity {
             recordingService = binder.getService();
             Timber.d("Assigned recording service");
 
-            final Subscription sub = recordingService.recordingState
+            final Subscription sub = recordingService.observeState()
                     .subscribeOn(Schedulers.io())
                     .observeOn(AndroidSchedulers.mainThread())
                     .subscribe(
                             state -> {
-                                if(state == AudioRecord.RECORDSTATE_RECORDING) {
-                                    statusText.setText(R.string.statusRecording);
-                                }
-                                else {
-                                    statusText.setText(R.string.statusNotRecording);
+                                switch(state) {
+                                    case RECORDING:
+                                        statusText.setText(R.string.recordingStatusRecording);
+                                        recordButton.setText(R.string.recordButtonTakeSnapshot);
+                                        break;
+                                    case NOT_RECORDING:
+                                        statusText.setText(R.string.recordingStatusNotRecording);
+                                        recordButton.setText(
+                                                R.string.recordButtonStartRecording
+                                        );
+                                        break;
+                                    case MISSING_AUDIO_PERMISSION:
+                                        statusText.setText(
+                                                R.string.recordStatusNoPermission
+                                        );
+                                        recordButton.setText(
+                                                R.string.recordButtonPermitRecording
+                                        );
+                                        break;
+                                    default:
+                                        Timber.wtf(
+                                                "Exhaustive case analysis failed"
+                                        );
+                                        throw new RuntimeException("Oh dear.");
                                 }
                             },
                             error -> {
@@ -323,6 +392,8 @@ public class MainActivity extends AppCompatActivity {
                             }
                     );
             subscriptions.add(sub);
+
+            startRecording();
         }
 
         @Override
@@ -335,8 +406,16 @@ public class MainActivity extends AppCompatActivity {
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         switch (requestCode) {
-            case 0:
+            case FINE_LOCATION_PERMISSION_REQUEST:
                 canUseFineLocation =  (grantResults[0] == PERMISSION_GRANTED);
+                break;
+            case RECORD_AUDIO_REQUEST:
+                if(grantResults[0] == PERMISSION_GRANTED) {
+                    startRecording();
+                }
+                else {
+                    Timber.d("User refused audio recording permission.");
+                }
                 break;
             default:
                 throw new RuntimeException("Unexpected request code " + requestCode + " for permission request");
