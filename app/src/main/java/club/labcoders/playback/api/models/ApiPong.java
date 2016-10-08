@@ -6,10 +6,10 @@ import org.joda.time.DateTime;
  * Created by jake on 2016-09-16.
  */
 
-public class Pong {
+public class ApiPong {
     private DateTime pong;
 
-    public Pong() {
+    public ApiPong() {
     }
 
     public DateTime getPong() {

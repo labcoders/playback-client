@@ -19,11 +19,11 @@ public class CircularShortBuffer {
      */
     public CircularShortBuffer(int size) {
         if (size <= 0) {
-            Timber.wtf("Cannot allocated circular buffer with size <= 0");
+            Timber.wtf("Cannot allocate circular buffer with size <= 0");
             throw new RuntimeException("Shitting fucks");
         }
-        start = 0;
-        size = 0;
+        this.start = 0;
+        this.size = 0;
         this.maxSize = size;
         shorts = new short[size][];
     }

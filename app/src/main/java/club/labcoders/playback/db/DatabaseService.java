@@ -1,5 +1,6 @@
 package club.labcoders.playback.db;
 
+import android.annotation.SuppressLint;
 import android.app.Service;
 import android.content.ContentValues;
 import android.content.Context;
@@ -9,36 +10,28 @@ import android.database.sqlite.SQLiteDatabase;
 import android.os.Binder;
 import android.os.IBinder;
 import android.support.annotation.Nullable;
-import android.widget.Toast;
 
-import club.labcoders.playback.db.models.AudioRecordingDb;
+import club.labcoders.playback.db.models.DbAudioRecording;
+import club.labcoders.playback.db.models.DbSessionToken;
+import club.labcoders.playback.db.tables.RecordingTable;
+import club.labcoders.playback.db.tables.SessionTable;
 import rx.Observable;
 import timber.log.Timber;
 
 public class DatabaseService extends Service {
     private SQLiteDatabase db;
 
-    private String[] SCHEMAS = {
-            "CREATE TABLE IF NOT EXISTS session (" +
-                    "id INTEGER PRIMARY KEY, " +
-                    "token VARCHAR " +
-                    ");",
-            "CREATE TABLE IF NOT EXISTS recording (" +
-                    "id INTEGER PRIMARY KEY, " +
-                    "recording BLOB NOT NULL, " +
-                    "latitude REAL, " +
-                    "longitude REAL, " +
-                    "duration REAL NOT NULL, " +
-                    "recorded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP" +
-                    ");",
+    private DatabaseTable[] TABLES = {
+            new RecordingTable(),
+            new SessionTable()
     };
 
     public DatabaseService() {
     }
 
     private void createTables() {
-        for(final String schema : SCHEMAS) {
-            db.execSQL(schema);
+        for(final DatabaseTable table : TABLES) {
+            table.create(db);
         }
     }
 
@@ -59,31 +52,24 @@ public class DatabaseService extends Service {
         super.onDestroy();
     }
 
-    /**
-     * Retrieves the token from the database, if any.
-     * @return The token, or null if there is none.
-     */
-    public Observable<String> getToken() {
-        return Observable.create(
-                subscriber -> {
-                    try (
-                            final Cursor cur = db.rawQuery(
-                                    "select token from session where id = 1;",
-                                    null
-                            )
+    public <S> Observable<S> observeSimpleQueryOperation(
+            SimpleQueryOperation<S> query,
+            CursorAdapter<S> adapter) {
 
-                    ) {
-                        if(cur.moveToNext()) {
-                            subscriber.onNext(
-                                    cur.getString(cur.getColumnIndex("token"))
-                            );
-                        }
-                        else {
-                            subscriber.onNext(null);
-                        }
-                        subscriber.onCompleted();
-                    }
-                }
+        @SuppressLint("Recycle") // it is closed by the ObservableCursor
+        final Cursor cursor = db.rawQuery(query.getQueryString(), null);
+        return new ObservableCursor<S>(cursor).observe(adapter);
+    }
+
+    public Observable<Long> observeSimpleInsertOperation(
+            SimpleInsertOperation operation
+    ) {
+        return Observable.just(operation.insert(db));
+    }
+
+    public Observable<DbSessionToken> getToken() {
+        return observeSimpleQueryOperation(
+            DbSessionToken.getOperation(), DbSessionToken.getCursorAdapter()
         );
     }
 
@@ -96,19 +82,10 @@ public class DatabaseService extends Service {
         Timber.d("upsertToken: updated %d row(s) in the db.", affectedRows);
     }
 
-    public Observable<AudioRecordingDb> getRecordings() {
-        final String q = AudioRecordingDb.QUERY;
-        return Observable.create(
-                subscriber -> {
-                    try(final Cursor cur = db.rawQuery(q, null)) {
-                        while(cur.moveToNext()) {
-                            subscriber.onNext(
-                                    AudioRecordingDb.fromCursor(cur)
-                            );
-                        }
-                        subscriber.onCompleted();
-                    }
-                }
+    public Observable<DbAudioRecording> getRecordings() {
+        return observeSimpleQueryOperation(
+                DbAudioRecording.getOperation(),
+                DbAudioRecording.getCursorAdapter()
         );
     }
 

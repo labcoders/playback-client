@@ -10,8 +10,8 @@ import java.util.List;
 
 import club.labcoders.playback.api.ApiManager;
 import club.labcoders.playback.api.PlaybackApi;
-import club.labcoders.playback.api.models.AudioRecording;
-import club.labcoders.playback.api.models.RecordingMetadata;
+import club.labcoders.playback.api.models.ApiAudioRecording;
+import club.labcoders.playback.api.models.ApiRecordingMetadata;
 import club.labcoders.playback.db.DatabaseService;
 import club.labcoders.playback.misc.RxServiceBinding;
 import rx.Observable;
@@ -46,23 +46,23 @@ public class HttpService extends Service {
                         api = null;
                     }
                     Timber.d("Got token; initializing api.");
-                    ApiManager.initialize(s);
+                    ApiManager.initialize(s.getToken());
                     api = ApiManager.getInstance().getApi();
                 });
         subscriptions.add(sub);
     }
 
-    public Observable<Integer> upload(AudioRecording rec) {
+    public Observable<Integer> upload(ApiAudioRecording rec) {
         Timber.d("Recording upload started.");
         return api.uploadRecording(rec);
     }
 
-    public Observable<AudioRecording> getAudioRecording(Integer id) {
+    public Observable<ApiAudioRecording> getAudioRecording(Integer id) {
         Timber.d("Recoding retrieval started.");
         return api.getRecording(id);
     }
 
-    public Observable<List<RecordingMetadata>> getMetadata() {
+    public Observable<List<ApiRecordingMetadata>> getMetadata() {
         Timber.d("Metadata retrieval started.");
         return api.getMetadata();
     }

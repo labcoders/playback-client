@@ -53,19 +53,7 @@ public class RecordingService extends Service {
     public CircularShortBuffer audioCircularBuffer;
 
     /**
-     * A lock used for read access to the queue.
-     *
-     * The queue is wait-free. The microphone can continue to push data onto
-     * it as much as it likes, since it is the only producer for it. However,
-     * there are two consumers for the queue. One consumer is the garbage
-     * collection process that drops old buffers when the queue's length
-     * exceeds the configured duration. Another consumer begins when the
-     * linearization process occurs. Consequently, when linearization is
-     * occurring, we do not want the garbage collection process to run, as
-     * that process may drop some of the buffers that we have yet to linearize.
-     *
-     * {@see #queueGc()}
-     * {@see #audioBufferQueue}
+     * A lock used for read access to the circular short buffer.
      */
     private final ReentrantLock queueLock;
 
@@ -401,6 +389,9 @@ public class RecordingService extends Service {
         if(audioRecord != null) {
             audioRecord.release();
             audioRecord = null;
+        }
+        if(audioCircularBuffer != null) {
+            audioCircularBuffer.reset();
         }
         setRecordingState(RecordingServiceState.NOT_RECORDING);
     }

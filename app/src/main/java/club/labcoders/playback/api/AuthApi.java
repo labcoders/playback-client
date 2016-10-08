@@ -1,19 +1,17 @@
 package club.labcoders.playback.api;
 
-import club.labcoders.playback.api.models.AuthPing;
-import club.labcoders.playback.api.models.AuthPong;
-import club.labcoders.playback.api.models.AuthResult;
-import club.labcoders.playback.api.models.AuthenticationRequest;
+import club.labcoders.playback.api.models.ApiAuthPing;
+import club.labcoders.playback.api.models.ApiAuthPong;
+import club.labcoders.playback.api.models.ApiAuthResult;
+import club.labcoders.playback.api.models.ApiAuthenticationRequest;
 import retrofit2.http.Body;
-import retrofit2.http.GET;
 import retrofit2.http.POST;
-import retrofit2.http.Query;
 import rx.Observable;
 
 public interface AuthApi {
     @POST("/auth/ping")
-    Observable<AuthPong> ping(@Body AuthPing ping);
+    Observable<ApiAuthPong> ping(@Body ApiAuthPing ping);
 
     @POST("/auth")
-    Observable<AuthResult> auth(@Body AuthenticationRequest authenticationRequest);
+    Observable<ApiAuthResult> auth(@Body ApiAuthenticationRequest authenticationRequest);
 }

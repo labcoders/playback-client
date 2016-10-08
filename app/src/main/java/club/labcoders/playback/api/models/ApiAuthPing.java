@@ -4,10 +4,10 @@ package club.labcoders.playback.api.models;
  * Created by jake on 2016-09-18.
  */
 
-public class AuthPing {
+public class ApiAuthPing {
     private String token;
 
-    public AuthPing(String token) {
+    public ApiAuthPing(String token) {
         this.token = token;
     }
 

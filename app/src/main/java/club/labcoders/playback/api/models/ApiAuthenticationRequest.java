@@ -1,10 +1,10 @@
 package club.labcoders.playback.api.models;
 
-public class AuthenticationRequest {
+public class ApiAuthenticationRequest {
     private String username;
     private String password;
 
-    public AuthenticationRequest(String username, String password) {
+    public ApiAuthenticationRequest(String username, String password) {
         this.username = username;
         this.password = password;
     }

@@ -1,6 +1,7 @@
 package club.labcoders.playback;
 
 import android.Manifest;
+import android.app.Service;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -35,11 +36,17 @@ import butterknife.ButterKnife;
 import butterknife.OnClick;
 import club.labcoders.playback.api.ApiManager;
 import club.labcoders.playback.api.PlaybackApi;
-import club.labcoders.playback.api.models.AudioRecording;
+import club.labcoders.playback.api.models.ApiAudioRecording;
 import club.labcoders.playback.api.models.Base64Blob;
-import club.labcoders.playback.api.models.Ping;
-import club.labcoders.playback.api.models.RecordingMetadata;
+import club.labcoders.playback.api.models.ApiPing;
+import club.labcoders.playback.api.models.ApiRecordingMetadata;
+import club.labcoders.playback.db.DatabaseService;
+import club.labcoders.playback.db.models.DbAudioRecording;
+import club.labcoders.playback.db.models.RecordingFormat;
+import club.labcoders.playback.misc.Box;
 import club.labcoders.playback.misc.BufferOperator;
+import club.labcoders.playback.misc.Map;
+import club.labcoders.playback.misc.RxServiceBinding;
 import rx.Observable;
 import rx.Subscription;
 import rx.android.schedulers.AndroidSchedulers;
@@ -74,7 +81,7 @@ public class MainActivity extends AppCompatActivity {
     private boolean canUseFineLocation;
 
     private List<RecordingMetadata> availableRecordings;
-    private RecordingMetadataAdapter mAdapter;
+    private RecordingMetadataViewAdapter mAdapter;
 
     public MainActivity() {
         recordingServiceIsBound = false;
@@ -111,6 +118,33 @@ public class MainActivity extends AppCompatActivity {
         recordingService.stopRecording();
     }
 
+    private byte[] getRawAudio(short[] audioSamples) {
+        ByteBuffer buf = ByteBuffer.allocate(audioSamples.length * 2);
+        buf.order(ByteOrder.nativeOrder());
+        for (short s : audioSamples) {
+            buf.putShort(s);
+        }
+        return buf.array();
+    }
+
+    private void dumpBytesToFile(byte[] data) {
+        final File f = new File(
+                Environment.getExternalStorageDirectory(),
+                "temp.pcm"
+        );
+        Timber.d("dumping pcm to %s", f.toString());
+        try(final FileOutputStream fos
+                    = new FileOutputStream(f)) {
+            fos.write(data);
+        }
+        catch(FileNotFoundException e) {
+            Timber.e("File not found.");
+        }
+        catch(IOException e) {
+            Timber.e("io error");
+        }
+    }
+
     private void takeSnapshot() {
         double length;
 
@@ -138,80 +172,75 @@ public class MainActivity extends AppCompatActivity {
         }
 
         short[] shorts = recordingService.getBufferedAudio();
+        final byte[] rawAudio = getRawAudio(shorts);
 
-        ByteBuffer buf = ByteBuffer.allocate(shorts.length * 2);
-        buf.order(ByteOrder.nativeOrder());
-        for (short s : shorts) {
-            buf.putShort(s);
-        }
-
-        byte[] rawAudio = buf.array();
+        // some global state to pass things between parts of the pipeline
+        final Box<Integer> remoteId = new Box<>();
+        final Box<DateTime> timestamp = new Box<>();
+        final Box<Double> duration = new Box<>();
+        final String title = "Untitled";
 
         Observable.just(rawAudio)
-                .doOnNext(
-                        bytes -> {
-                            final File f = new File(
-                                    Environment.getExternalStorageDirectory(),
-                                    "temp.pcm"
-                            );
-                            Timber.d("dumping pcm to %s", f.toString());
-                            try(final FileOutputStream fos
-                                = new FileOutputStream(f)) {
-                                fos.write(bytes);
-                            }
-                            catch(FileNotFoundException e) {
-                                Timber.e("File not found.");
-                            }
-                            catch(IOException e) {
-                                Timber.e("io error");
-                            }
-                        }
-                )
-//                    .lift(enc)
-//                    .map(encodedOutput -> encodedOutput.byteArray)
-                .lift(new BufferOperator())
-//                    .lift(new MonoMuxingOperator(enc))
-                .flatMap(
-                        bytes -> {
-                            Timber.d(
-                                    "Got muxed byte buffer length %d",
-                                    bytes.length
-                            );
+                .doOnNext(this::dumpBytesToFile)
+                .flatMap(bytes -> {
+                            timestamp.setValue(DateTime.now());
+                    final double audioLength
+                            = rawAudio.length
+                            / AudioManager.getInstance().getBytesPerSample()
+                            / (double) AudioManager.getInstance()
+                            .getSampleRate();
+                    duration.setValue(audioLength);
+                    final ApiAudioRecording rec = new ApiAudioRecording(
+                            DateTime.now(),
+                            audioLength,
+                            new Base64Blob(bytes),
+                            title
+                    );
 
-                            final File f = new File(
-                                    Environment.getExternalStorageDirectory(),
-                                    "temp.mp4"
-                            );
-                            Timber.d("Dumping to %s.", f.getAbsolutePath());
-                            try (final FileOutputStream fos
-                                         = new FileOutputStream(f)) {
-                                fos.write(bytes);
-                            } catch (IOException e) {
-                                e.printStackTrace();
-                            }
-
-                            final AudioRecording rec = new AudioRecording(
-                                    DateTime.now(),
-                                    rawAudio.length
-                                            / AudioManager.getInstance().getBytesPerSample()
-                                            / AudioManager.getInstance().getSampleRate(),
-                                    new Base64Blob(bytes)
-                            );
-
-                            return httpService.upload(rec);
-                        }
+                    return httpService.upload(rec);
+                })
+                .flatMap(id -> {
+                    remoteId.setValue(id);
+                    return new RxServiceBinding
+                            <DatabaseService.DatabaseServiceBinder>(
+                            MainActivity.this,
+                            new Intent(
+                                    MainActivity.this,
+                                    DatabaseService.class
+                            ),
+                            Service.BIND_AUTO_CREATE)
+                            .binder(true);
+                })
+                .map(DatabaseService.DatabaseServiceBinder::getService)
+                .flatMap(databaseService -> databaseService
+                        .observeSimpleInsertOperation(
+                                new DbAudioRecording
+                                        .InsertOperationBuilder()
+                                        .setDuration(duration.getValue())
+                                        .setRecording(rawAudio)
+                                        .setFormat(
+                                                RecordingFormat
+                                                        .PCM_S16LE_FORMAT
+                                        )
+                                        .setLatitude(null)
+                                        .setLongitude(null)
+                                        .setName("Untitled")
+                                        .setRemoteId(remoteId.getValue())
+                                        .build()
+                        )
                 )
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(
-                        id -> {
+                        count -> {
+                            Timber.d("Inserted %d rows", count);
                             Timber.d("Uploaded raw with id " +
-                                    "%d", id);
+                                    "%d", remoteId.getValue());
                             Toast.makeText(
                                     MainActivity.this,
                                     String.format(
                                             "Uploaded row with id %d",
-                                            id
+                                            remoteId.getValue()
                                     ),
                                     Toast.LENGTH_LONG
                             ) .show();
@@ -229,7 +258,7 @@ public class MainActivity extends AppCompatActivity {
         final DateTime now = DateTime.now();
         Timber.d("Now is: %s.", now);
         subscriptions.add(
-                api.postPing(new Ping(now))
+                api.postPing(new ApiPing(now))
                         .subscribeOn(Schedulers.io())
                         .observeOn(AndroidSchedulers.mainThread())
                         .subscribe(pong -> {
@@ -272,6 +301,18 @@ public class MainActivity extends AppCompatActivity {
         startService(httpIntent);
         Timber.d("Started HTTP service.");
         bindService(httpIntent, httpConnection, Context.BIND_IMPORTANT);
+        final Subscription sub = new RxServiceBinding<HttpService.HttpServiceBinder>(
+                this,
+                httpIntent,
+                Context.BIND_IMPORTANT)
+                .binder(true)
+                .map(HttpService.HttpServiceBinder::getService)
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(
+                        this::withHttpService,
+                        error -> withoutHttpService(error)
+                );
+
         Timber.d("Bound HTTP service");
         httpServiceIsBound = true;
 
@@ -281,13 +322,75 @@ public class MainActivity extends AppCompatActivity {
                 = new LinearLayoutManager(getApplicationContext());
         metadataRecyclerView.setLayoutManager(layoutManager);
 
-        mAdapter = new RecordingMetadataAdapter(availableRecordings, this);
+        mAdapter = new RecordingMetadataViewAdapter(availableRecordings, this);
         metadataRecyclerView.setAdapter(mAdapter);
 
         // Check if we have fine location permissions, and set a flag to show that we do/don't.
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, FINE_LOCATION_PERMISSION_REQUEST);
+        final int fineGrant = ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_FINE_LOCATION
+        );
+        final int coarseGrant = ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+        );
+        if (fineGrant != PERMISSION_GRANTED && coarseGrant != PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(
+                    this,
+                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                    FINE_LOCATION_PERMISSION_REQUEST
+            );
         }
+    }
+
+    private void withoutHttpService(Throwable error) {
+        Timber.e("httpService unavailable");
+        Toast.makeText(this, "Unable to connect to server.", Toast.LENGTH_LONG)
+                .show();
+        error.printStackTrace();
+        setMetadataListing(new ArrayList<>());
+        metadataRecyclerView.setVisibility(View.GONE);
+    }
+
+    private void withHttpService(HttpService httpService) {
+        if(httpService == null && this.httpService == null) {
+            Timber.e("Called withHttpService, but have no httpservice");
+            throw new RuntimeException("wtf yolo");
+        }
+        if(this.httpService == null)
+            this.httpService = httpService;
+        else if(httpService == null)
+            Timber.d("Reusing stored httpservice in withHttpService");
+
+        // Populate the recycler view.
+        final Box<Subscription> box = new Box<>();
+        final Subscription sub = this.httpService.getMetadata()
+                .lift(new Map<ApiRecordingMetadata, RecordingMetadata>(
+                        RecordingMetadata::from
+                ))
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(
+                        this::setMetadataListing,
+                        err -> {
+                            Timber.e("Error while retrieving recording metadata");
+                            err.printStackTrace();
+                            box.getValue().unsubscribe();
+                        }
+                );
+        box.setValue(sub);
+        subscriptions.add(sub);
+    }
+
+    private void setMetadataListing(List<RecordingMetadata> list) {
+        Timber.d(list.toString());
+        for (final RecordingMetadata d : list) {
+            Timber.d("Metadata contains: duration: %s, timestamp: %s", d.getDuration(), d.getTimestamp());
+            availableRecordings.add(d);
+        }
+        mAdapter.notifyDataSetChanged();
+        Timber.d("Updated and populated dataset for metadata list with %d items.", list.size());
+        Timber.d("Now recycler view contains %d items.", mAdapter.getItemCount());
     }
 
     @Override
@@ -350,24 +453,7 @@ public class MainActivity extends AppCompatActivity {
             httpService = binder.getService();
             Timber.d("Assigned httpService");
 
-            // Populate the recycler view.
-            httpService.getMetadata()
-                    .subscribeOn(Schedulers.io())
-                    .observeOn(AndroidSchedulers.mainThread())
-                    .subscribe(list -> {
-                        Timber.d(list.toString());
-                        for (RecordingMetadata d : list) {
-                            Timber.d("Metadata contains: duration: %s, timestamp: %s", d.getDuration(), d.getTimestamp());
-                            availableRecordings.add(d);
-                        }
-                        mAdapter.notifyDataSetChanged();
-                        Timber.d("Updated and populated dataset for metadata list with %d items.", list.size());
-                        Timber.d("Now recycler view contains %d items.", mAdapter.getItemCount());
-                    },
-                            err -> {
-                                Timber.e("Error while retrieving recording metadata");
-                                err.printStackTrace();
-                            });
+
 
         }
 
@@ -451,7 +537,8 @@ public class MainActivity extends AppCompatActivity {
                 canUseFineLocation =  (grantResults[0] == PERMISSION_GRANTED);
                 break;
             case RECORD_AUDIO_AND_START_REQUEST:
-                if(grantResults[0] == PERMISSION_GRANTED) {
+                if(grantResults.length > 0 &&
+                        grantResults[0] == PERMISSION_GRANTED) {
                     startRecording();
                 }
                 else {
@@ -459,7 +546,8 @@ public class MainActivity extends AppCompatActivity {
                 }
                 break;
             case RECORD_AUDIO_REQUEST:
-                if(grantResults[0] == PERMISSION_GRANTED) {
+                if(grantResults.length > 0 &&
+                        grantResults[0] == PERMISSION_GRANTED) {
                     Timber.d("Yay.");
                     recordingService.checkState();
                 }

@@ -1,10 +1,10 @@
 package club.labcoders.playback.api.models;
 
-public class AuthResult {
+public class ApiAuthResult {
     private boolean success;
     private String token;
 
-    public AuthResult(boolean success, String token) {
+    public ApiAuthResult(boolean success, String token) {
         this.success = success;
         this.token = token;
     }

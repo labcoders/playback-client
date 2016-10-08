@@ -2,7 +2,10 @@ package club.labcoders.playback.api.models;
 
 import org.joda.time.DateTime;
 
-public class RecordingMetadata {
+/**
+ * Represents recording metadata for a recording that is present in the backend.
+ */
+public class ApiRecordingMetadata {
     private DateTime timestamp;
     private GeographicalPosition location;
     private double duration;

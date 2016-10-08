@@ -2,13 +2,13 @@ package club.labcoders.playback.api.models;
 
 import org.joda.time.DateTime;
 
-public class Ping {
+public class ApiPing {
     private DateTime ping;
 
-    public Ping() {
+    public ApiPing() {
     }
 
-    public Ping(DateTime ping) {
+    public ApiPing(DateTime ping) {
         this.ping = ping;
     }
 

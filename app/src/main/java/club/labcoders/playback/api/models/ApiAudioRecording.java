@@ -2,23 +2,26 @@ package club.labcoders.playback.api.models;
 
 import org.joda.time.DateTime;
 
-public class AudioRecording {
+public class ApiAudioRecording {
     private DateTime timestamp;
     private double duration;
     private Base64Blob recording;
     private GeographicalPosition location;
+    private String name;
 
-    public AudioRecording(DateTime timestamp, double duration, Base64Blob recording, GeographicalPosition location) {
+    public ApiAudioRecording(DateTime timestamp, double duration, Base64Blob recording, GeographicalPosition location, String name) {
         this.timestamp = timestamp;
         this.duration = duration;
         this.recording = recording;
         this.location = location;
+        this.name = name;
     }
 
-    public AudioRecording(DateTime timestamp, double duration, Base64Blob recording) {
+    public ApiAudioRecording(DateTime timestamp, double duration, Base64Blob recording, String name) {
         this.timestamp = timestamp;
         this.recording = recording;
         this.duration = duration;
+        this.name = name;
     }
 
     public DateTime getTimestamp() {

@@ -14,10 +14,11 @@ import butterknife.OnClick;
 import club.labcoders.playback.api.ApiManager;
 import club.labcoders.playback.api.AuthApi;
 import club.labcoders.playback.api.AuthManager;
-import club.labcoders.playback.api.models.AuthPing;
-import club.labcoders.playback.api.models.AuthResult;
-import club.labcoders.playback.api.models.AuthenticationRequest;
+import club.labcoders.playback.api.models.ApiAuthPing;
+import club.labcoders.playback.api.models.ApiAuthResult;
+import club.labcoders.playback.api.models.ApiAuthenticationRequest;
 import club.labcoders.playback.db.DatabaseService;
+import club.labcoders.playback.db.models.DbSessionToken;
 import club.labcoders.playback.misc.Box;
 import club.labcoders.playback.misc.RxServiceBinding;
 import rx.Observable;
@@ -70,6 +71,7 @@ public class AuthActivity extends Activity {
                 .binder(true)
                 .map(DatabaseService.DatabaseServiceBinder::getService)
                 .flatMap(DatabaseService::getToken)
+                .map(DbSessionToken::getToken)
                 .flatMap(s -> {
                     Timber.d("Got token %s", s);
                     if(s == null)
@@ -77,7 +79,7 @@ public class AuthActivity extends Activity {
                     tokenBox.setValue(s);
                     return AuthManager.getInstance()
                             .getApi()
-                            .ping(new AuthPing(s))
+                            .ping(new ApiAuthPing(s))
                             .subscribeOn(Schedulers.io())
                             .observeOn(AndroidSchedulers.mainThread());
                 })
@@ -107,9 +109,9 @@ public class AuthActivity extends Activity {
         }
         final String username = this.username.getText().toString();
         final String password = this.password.getText().toString();
-        final Box<AuthResult> authResultBox = new Box<>();
+        final Box<ApiAuthResult> authResultBox = new Box<>();
         final Subscription sub = api.auth(
-                new AuthenticationRequest(username, password))
+                new ApiAuthenticationRequest(username, password))
                 .flatMap(authResult1 -> {
                     authResultBox.setValue(authResult1);
                     return new RxServiceBinding<DatabaseService.DatabaseServiceBinder>(
@@ -123,7 +125,7 @@ public class AuthActivity extends Activity {
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribeOn(Schedulers.io())
                 .subscribe(db -> {
-                    final AuthResult authResult = authResultBox.getValue();
+                    final ApiAuthResult authResult = authResultBox.getValue();
                     if (authResult.getSuccess()) {
                         Toast.makeText(this, "Logged in!", Toast.LENGTH_LONG).show();
                         Timber.d("About to upsert token.");
