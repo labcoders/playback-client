@@ -1,7 +1,9 @@
 package club.labcoders.playback.db.models;
 
 import android.content.ContentValues;
+import android.database.sqlite.SQLiteDatabase;
 
+import club.labcoders.playback.db.SimpleUpdateOperation;
 import club.labcoders.playback.db.TrivialInsertOperation;
 import club.labcoders.playback.db.CursorAdapter;
 import club.labcoders.playback.db.DatabaseTable;
@@ -16,8 +18,8 @@ public class DbAudioRecording {
             = "SELECT id, recording, latitude, longitude, duration, format "
             + "FROM recording;";
 
-    public static Operation getOperation() {
-        return new Operation();
+    public static QueryOperation getOperation() {
+        return new QueryOperation();
     }
 
     public static CursorAdapter<DbAudioRecording> getCursorAdapter() {
@@ -70,7 +72,7 @@ public class DbAudioRecording {
         return format;
     }
 
-    public static class Operation
+    public static class QueryOperation
             implements TableOperation, SimpleQueryOperation<DbAudioRecording> {
 
         @Override
@@ -80,7 +82,33 @@ public class DbAudioRecording {
 
         @Override
         public DatabaseTable getTable() {
-            return new RecordingTable();
+            return RecordingTable.INSTANCE;
+        }
+    }
+
+    public static class UpdateOperation
+            implements TableOperation, SimpleUpdateOperation {
+        private final ContentValues values;
+        private final long id;
+
+        public UpdateOperation(long id, ContentValues values) {
+            this.id = id;
+            this.values = values;
+        }
+
+        @Override
+        public long update(SQLiteDatabase db) {
+            return db.update(
+                    "recording",
+                    values,
+                    "_id = ?",
+                    new String[]{ String.valueOf(id) }
+            );
+        }
+
+        @Override
+        public DatabaseTable getTable() {
+            return RecordingTable.INSTANCE;
         }
     }
 
@@ -94,7 +122,7 @@ public class DbAudioRecording {
 
         @Override
         public DatabaseTable getTable() {
-            return new RecordingTable();
+            return RecordingTable.INSTANCE;
         }
     }
 
@@ -110,7 +138,7 @@ public class DbAudioRecording {
 
         @Override
         public DatabaseTable getTable() {
-            return new RecordingTable();
+            return RecordingTable.INSTANCE;
         }
 
         public InsertOperation build() {

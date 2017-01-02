@@ -1,9 +1,10 @@
-package club.labcoders.playback;
+package club.labcoders.playback.broadcasts;
 
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 
+import club.labcoders.playback.services.RecordingService;
 import timber.log.Timber;
 
 public class AutoStart extends BroadcastReceiver {

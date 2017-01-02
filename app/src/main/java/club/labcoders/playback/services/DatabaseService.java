@@ -1,4 +1,4 @@
-package club.labcoders.playback.db;
+package club.labcoders.playback.services;
 
 import android.annotation.SuppressLint;
 import android.app.Service;
@@ -11,6 +11,13 @@ import android.os.Binder;
 import android.os.IBinder;
 import android.support.annotation.Nullable;
 
+import club.labcoders.playback.api.models.ApiRecordingMetadata;
+import club.labcoders.playback.db.CursorAdapter;
+import club.labcoders.playback.db.DatabaseTable;
+import club.labcoders.playback.db.ObservableCursor;
+import club.labcoders.playback.db.SimpleInsertOperation;
+import club.labcoders.playback.db.SimpleQueryOperation;
+import club.labcoders.playback.db.SimpleUpdateOperation;
 import club.labcoders.playback.db.models.DbAudioRecording;
 import club.labcoders.playback.db.models.DbSessionToken;
 import club.labcoders.playback.db.tables.RecordingTable;
@@ -22,8 +29,8 @@ public class DatabaseService extends Service {
     private SQLiteDatabase db;
 
     private DatabaseTable[] TABLES = {
-            new RecordingTable(),
-            new SessionTable()
+            RecordingTable.INSTANCE,
+            SessionTable.INSTANCE
     };
 
     public DatabaseService() {
@@ -58,7 +65,7 @@ public class DatabaseService extends Service {
 
         @SuppressLint("Recycle") // it is closed by the ObservableCursor
         final Cursor cursor = db.rawQuery(query.getQueryString(), null);
-        return new ObservableCursor<S>(cursor).observe(adapter);
+        return new ObservableCursor.Builder<S>().build(cursor).observe(adapter);
     }
 
     /**
@@ -73,19 +80,25 @@ public class DatabaseService extends Service {
         return Observable.just(operation.insert(db));
     }
 
+    public Observable<Long> observeSimpleUpdateOperation(
+            SimpleUpdateOperation operation
+    ) {
+        return Observable.just(operation.update(db));
+    }
+
     public Observable<DbSessionToken> getToken() {
         return observeSimpleQueryOperation(
             DbSessionToken.getOperation(), DbSessionToken.getCursorAdapter()
         );
     }
 
-    public void upsertToken(String token) {
-        ContentValues vals = new ContentValues(1);
-        vals.put("id", 1);
-        vals.put("token", token);
-        final long affectedRows
-                = db.insertWithOnConflict("session", null, vals, SQLiteDatabase.CONFLICT_REPLACE);
-        Timber.d("upsertToken: updated %d row(s) in the db.", affectedRows);
+    public Observable<Long> upsertToken(String token) {
+        return observeSimpleUpdateOperation(
+                new DbSessionToken.UpsertOperation(token))
+                .doOnNext(affectedRows -> Timber.d(
+                        "upsertToken: updated %d row(s) in the db.",
+                        affectedRows)
+                );
     }
 
     public Observable<DbAudioRecording> getRecordings() {

@@ -1,4 +1,4 @@
-package club.labcoders.playback.misc;
+package club.labcoders.playback.misc.rx;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;

@@ -9,7 +9,7 @@ Have you ever hung up on somebody and said "Damn! I wish I had recorded that cal
 
 This is an application that lets you record things that happened in the past!
 
-Your phone will constantly be recording, and always have a memory of several minutes.
+Your phone will constantly be recording, and always have fst memory of several minutes.
 
 Whenever something happens, all you have to do is tap "Record", and the recording
 will be immediately sent to the cloud, available for your future perusal!

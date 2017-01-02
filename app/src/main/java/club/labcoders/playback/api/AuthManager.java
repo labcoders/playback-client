@@ -19,18 +19,9 @@ public class AuthManager {
 
     private final String BASE_URL = Url.BASE_URL;
 
-    public static void initialize() {
-        if (!(instance == null)) {
-            return;
-        }
-
-        instance = new AuthManager();
-    }
-
     public static AuthManager getInstance() {
-        if (instance == null) {
-            initialize();
-        }
+        if (instance == null)
+            instance = new AuthManager();
         return instance;
     }
 

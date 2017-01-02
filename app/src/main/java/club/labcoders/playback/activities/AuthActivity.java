@@ -1,4 +1,4 @@
-package club.labcoders.playback;
+package club.labcoders.playback.activities;
 
 import android.app.Activity;
 import android.app.Service;
@@ -11,16 +11,18 @@ import android.widget.Toast;
 import butterknife.BindView;
 import butterknife.ButterKnife;
 import butterknife.OnClick;
+import club.labcoders.playback.misc.TrivialErrorHandler;
+import club.labcoders.playback.services.DatabaseService;
+import club.labcoders.playback.R;
 import club.labcoders.playback.api.ApiManager;
 import club.labcoders.playback.api.AuthApi;
 import club.labcoders.playback.api.AuthManager;
 import club.labcoders.playback.api.models.ApiAuthPing;
 import club.labcoders.playback.api.models.ApiAuthResult;
 import club.labcoders.playback.api.models.ApiAuthenticationRequest;
-import club.labcoders.playback.db.DatabaseService;
 import club.labcoders.playback.db.models.DbSessionToken;
 import club.labcoders.playback.misc.Box;
-import club.labcoders.playback.misc.RxServiceBinding;
+import club.labcoders.playback.misc.rx.RxServiceBinding;
 import rx.Observable;
 import rx.Subscription;
 import rx.android.schedulers.AndroidSchedulers;
@@ -61,15 +63,14 @@ public class AuthActivity extends Activity {
 
         api = AuthManager.getInstance().getApi();
 
+        tryExistingToken();
+    }
+
+    private void tryExistingToken() {
         // Try to get session token from local DB
         final Box<String> tokenBox = new Box<>();
-        final Subscription sub = new RxServiceBinding<DatabaseService.DatabaseServiceBinder>(
-                this,
-                new Intent(this, DatabaseService.class),
-                Service.BIND_AUTO_CREATE
-        )
-                .binder(true)
-                .map(DatabaseService.DatabaseServiceBinder::getService)
+        final Subscription sub = observeDatabaseService()
+                .doOnNext($ -> Timber.d("Getting token."))
                 .flatMap(DatabaseService::getToken)
                 .map(DbSessionToken::getToken)
                 .flatMap(s -> {
@@ -96,9 +97,20 @@ public class AuthActivity extends Activity {
                             } else {
                                 Timber.d("Token is too old.");
                             }
-                        }
+                        },
+                        new TrivialErrorHandler("auth pong"),
+                        () -> Timber.d("Donerino.")
                 );
         subscriptions.add(sub);
+    }
+
+    private Observable<DatabaseService> observeDatabaseService() {
+        return new RxServiceBinding<DatabaseService.DatabaseServiceBinder>(
+                this,
+                new Intent(this, DatabaseService.class),
+                Service.BIND_AUTO_CREATE)
+                .binder(true)
+                .map(DatabaseService.DatabaseServiceBinder::getService);
     }
 
     @OnClick(R.id.loginButton)
@@ -112,35 +124,61 @@ public class AuthActivity extends Activity {
         final Box<ApiAuthResult> authResultBox = new Box<>();
         final Subscription sub = api.auth(
                 new ApiAuthenticationRequest(username, password))
-                .flatMap(authResult1 -> {
-                    authResultBox.setValue(authResult1);
+                .flatMap(authResult -> {
+                    authResultBox.setValue(authResult);
                     return new RxServiceBinding<DatabaseService.DatabaseServiceBinder>(
                             AuthActivity.this,
                             new Intent(AuthActivity.this, DatabaseService.class),
                             Service.BIND_AUTO_CREATE
                     ).binder(true);
                 })
-                .doOnNext(databaseServiceBinder -> Timber.d("Got DB binder."))
                 .map(DatabaseService.DatabaseServiceBinder::getService)
-                .observeOn(AndroidSchedulers.mainThread())
                 .subscribeOn(Schedulers.io())
-                .subscribe(db -> {
-                    final ApiAuthResult authResult = authResultBox.getValue();
-                    if (authResult.getSuccess()) {
-                        Toast.makeText(this, "Logged in!", Toast.LENGTH_LONG).show();
-                        Timber.d("About to upsert token.");
-                        db.upsertToken(authResultBox.getValue().getToken());
-                        ApiManager.initialize(authResult.getToken());
-                        startActivity(new Intent(this, MainActivity.class));
-                        finish();
-                    }
-                    else {
-                        Toast.makeText(this, "Failed to login.", Toast
-                                .LENGTH_SHORT);
+                .observeOn(AndroidSchedulers.mainThread())
+                .filter($ -> {
+                    boolean result = authResultBox.getValue().getSuccess();
+                    if(!result) {
+                        Toast.makeText(
+                                this,
+                                "Failed to login.",
+                                Toast.LENGTH_SHORT)
+                                .show();
                         this.password.setText("");
                     }
-                });
+                    return result;
+                })
+                .observeOn(AndroidSchedulers.mainThread())
+                .doOnNext($ -> Toast.makeText(
+                        this,
+                        "Logged in!",
+                        Toast.LENGTH_LONG)
+                        .show()
+                )
+                .observeOn(Schedulers.io())
+                .flatMap(databaseService -> {
+                    Timber.d("About to upsert token.");
+                    return databaseService.upsertToken(
+                            authResultBox.getValue()
+                                    .getToken()
+                    );
+                })
+                .map($ -> {
+                    ApiManager.initialize(authResultBox.getValue().getToken());
+                    return null;
+                })
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(
+                        $ -> {
+                            transitionToMainActivity();
+                        },
+                        new TrivialErrorHandler("auth")
+                );
         subscriptions.add(sub);
+    }
+
+    private void transitionToMainActivity() {
+        startActivity(new Intent(this, MainActivity.class));
+        finish();
     }
 
     @Override

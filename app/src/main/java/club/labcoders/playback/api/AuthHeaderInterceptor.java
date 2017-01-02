@@ -5,6 +5,7 @@ import java.io.IOException;
 import okhttp3.Interceptor;
 import okhttp3.Request;
 import okhttp3.Response;
+import timber.log.Timber;
 
 public class AuthHeaderInterceptor implements Interceptor {
     private final String sessionToken;
@@ -20,9 +21,6 @@ public class AuthHeaderInterceptor implements Interceptor {
                 .addHeader("Authorization", "oToke " + sessionToken)
                 .method(orig.method(), orig.body())
                 .build();
-
-
-
         return chain.proceed(newReq);
     }
 }

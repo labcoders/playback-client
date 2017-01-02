@@ -71,6 +71,7 @@ public class ApiManager {
         final OkHttpClient client = new OkHttpClient.Builder()
                 .addInterceptor(new GzipInterceptor())
                 .addInterceptor(new AuthHeaderInterceptor(tok))
+                .addInterceptor(new LoggingInterceptor())
                 .build();
 
         adapter = new Retrofit.Builder()

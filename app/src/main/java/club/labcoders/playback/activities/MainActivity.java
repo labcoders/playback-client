@@ -1,14 +1,11 @@
-package club.labcoders.playback;
+package club.labcoders.playback.activities;
 
 import android.Manifest;
 import android.app.Service;
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
 import android.os.Environment;
-import android.os.IBinder;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
@@ -34,19 +31,29 @@ import java.util.List;
 import butterknife.BindView;
 import butterknife.ButterKnife;
 import butterknife.OnClick;
+import club.labcoders.playback.RecordingMetadataSynchronizer;
+import club.labcoders.playback.audio.AudioManager;
+import club.labcoders.playback.db.adapters.DbRecordingMetadataCursorAdapter;
+import club.labcoders.playback.db.models.DbRecordingMetadata;
+import club.labcoders.playback.misc.rx.Fold;
+import club.labcoders.playback.misc.fp.Pair;
+import club.labcoders.playback.misc.TrivialErrorHandler;
+import club.labcoders.playback.services.DatabaseService;
+import club.labcoders.playback.services.HttpService;
+import club.labcoders.playback.R;
+import club.labcoders.playback.data.RecordingMetadata;
+import club.labcoders.playback.views.RecordingMetadataViewAdapter;
+import club.labcoders.playback.services.RecordingService;
 import club.labcoders.playback.api.ApiManager;
 import club.labcoders.playback.api.PlaybackApi;
 import club.labcoders.playback.api.models.ApiAudioRecording;
 import club.labcoders.playback.api.models.Base64Blob;
 import club.labcoders.playback.api.models.ApiPing;
-import club.labcoders.playback.api.models.ApiRecordingMetadata;
-import club.labcoders.playback.db.DatabaseService;
 import club.labcoders.playback.db.models.DbAudioRecording;
 import club.labcoders.playback.db.models.RecordingFormat;
 import club.labcoders.playback.misc.Box;
-import club.labcoders.playback.misc.BufferOperator;
-import club.labcoders.playback.misc.Map;
-import club.labcoders.playback.misc.RxServiceBinding;
+import club.labcoders.playback.misc.fp.Cast;
+import club.labcoders.playback.misc.rx.RxServiceBinding;
 import rx.Observable;
 import rx.Subscription;
 import rx.android.schedulers.AndroidSchedulers;
@@ -73,49 +80,74 @@ public class MainActivity extends AppCompatActivity {
     @BindView(R.id.stopRecordingButton)
     Button stopRecordingButton;
 
-    RecordingService recordingService;
-    HttpService httpService;
-    private boolean recordingServiceIsBound;
     private CompositeSubscription subscriptions;
-    private boolean httpServiceIsBound;
-    private boolean canUseFineLocation;
 
-    private List<RecordingMetadata> availableRecordings;
     private RecordingMetadataViewAdapter mAdapter;
 
     public MainActivity() {
-        recordingServiceIsBound = false;
-        httpServiceIsBound = false;
+
     }
 
     @OnClick(R.id.uploadButton)
     public void onRecordButtonClick() {
-        switch (recordingService.getState()) {
-            case MISSING_AUDIO_PERMISSION:
-                requestRecordingPrivilege();
-                break;
-            case RECORDING:
-                takeSnapshot();
-                break;
-            case NOT_RECORDING:
-                startRecording();
-                break;
-        }
+        final Subscription sub = observeRecordingService()
+                .zipWith(observeHttpService(true), Pair::new)
+                .flatMap(p -> {
+                    final RecordingService recordingService = p.fst;
+                    final HttpService httpService = p.snd;
+
+                    switch (recordingService.getState()) {
+                        case MISSING_AUDIO_PERMISSION:
+                            requestRecordingPrivilege();
+                            break;
+                        case RECORDING:
+                            return takeSnapshot(recordingService, httpService);
+                        case NOT_RECORDING:
+                            startRecording(recordingService);
+                            break;
+                    }
+
+                    return Observable.just(null);
+                })
+                .subscribe(
+                        aVoid -> {},
+                        new TrivialErrorHandler()
+                );
+        subscriptions.add(sub);
     }
 
     @OnClick(R.id.stopRecordingButton)
     public void onStopRecordingButtonClick() {
-        switch(recordingService.getState()) {
-            case RECORDING:
-                stopRecording();
-                break;
-            default:
-                Timber.e("Stop recording pressed but not recording!");
-        }
+        final Subscription sub = observeRecordingService()
+                .flatMap(recordingService -> {
+                    switch(recordingService.getState()) {
+                        case RECORDING:
+                            stopRecording();
+                            break;
+                        default:
+                            Timber.e("Stop recording pressed but not recording!");
+                    }
+
+                    return Observable.just(null);
+                })
+                .subscribe(
+                        $ -> {},
+                        new TrivialErrorHandler()
+                );
+        subscriptions.add(sub);
     }
 
     private void stopRecording() {
-        recordingService.stopRecording();
+        final Subscription sub = observeRecordingService()
+                .flatMap(recordingService -> {
+                    recordingService.stopRecording();
+                    return Observable.just(null);
+                })
+                .subscribe(
+                        $ -> {},
+                        new TrivialErrorHandler("stopRecording")
+                );
+        subscriptions.add(sub);
     }
 
     private byte[] getRawAudio(short[] audioSamples) {
@@ -145,7 +177,10 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void takeSnapshot() {
+    private Observable<Void> takeSnapshot(
+            RecordingService recordingService,
+            HttpService httpService
+    ) {
         double length;
 
         if (recordingService == null) {
@@ -154,12 +189,12 @@ public class MainActivity extends AppCompatActivity {
                     "No recording service.",
                     Toast.LENGTH_SHORT
             ).show();
-            return;
+            return Observable.just(null);
         }
 
         if (httpService == null) {
             Toast.makeText(this, "No HTTP service", Toast.LENGTH_SHORT).show();
-            return;
+            return Observable.just(null);
         }
 
         if(!recordingService.isRecording()) {
@@ -168,7 +203,7 @@ public class MainActivity extends AppCompatActivity {
                     "Recording service is not recording.",
                     Toast.LENGTH_SHORT
             ).show();
-            return;
+            return Observable.just(null);
         }
 
         short[] shorts = recordingService.getBufferedAudio();
@@ -180,7 +215,7 @@ public class MainActivity extends AppCompatActivity {
         final Box<Double> duration = new Box<>();
         final String title = "Untitled";
 
-        Observable.just(rawAudio)
+        return Observable.just(rawAudio)
                 .doOnNext(this::dumpBytesToFile)
                 .flatMap(bytes -> {
                             timestamp.setValue(DateTime.now());
@@ -222,27 +257,51 @@ public class MainActivity extends AppCompatActivity {
                 )
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
-                .subscribe(
-                        id -> {
-                            Timber.d("Inserted local rows id %d", id);
-                            Timber.d("Uploaded raw with id " +
-                                    "%d", remoteId.getValue());
-                            Toast.makeText(
-                                    MainActivity.this,
-                                    String.format(
-                                            "Uploaded row with id %d",
-                                            remoteId.getValue()
-                                    ),
-                                    Toast.LENGTH_LONG
-                            ).show();
+                .doOnNext(id -> Timber.d("inserted local rows id %d", id))
+                .doOnNext($ ->
+                        Timber.d("Uploaded raw with id %d", remoteId.getValue())
+                )
+                .doOnNext($ ->
+                        Toast.makeText(
+                                this,
+                                String.format(
+                                        "Uploaded row with id %d",
+                                        remoteId.getValue()
+                                ),
+                                Toast.LENGTH_LONG
+                        ).show()
+                )
+                .flatMap($ -> observeHttpService(true))
+                .zipWith(observeDatabaseService(true), Pair::new)
+                .flatMap(p -> updateMetadataListing(p.fst, p.snd))
+                .map($ -> null);
+    }
 
-                            updateMetadataListing();
-                        },
-                        err -> {
-                            Timber.e("Failed to upload recording.");
-                            err.printStackTrace();
-                        }
-                );
+    private Observable<List<RecordingMetadata>> updateMetadataListing(
+            HttpService httpService,
+            DatabaseService databaseService
+    ) {
+        final Box<List<RecordingMetadataSynchronizer.Result>> resultsBox
+                = new Box<>();
+        return new RecordingMetadataSynchronizer(httpService, databaseService)
+                .synchronize()
+                .doOnNext(results -> Timber.d("Synchronized with server."))
+                .doOnNext(resultsBox::setValue)
+                .flatMap(results -> observeDatabaseMetadata(
+                        databaseService
+                ))
+                .doOnNext(recordingMetadata -> Timber.d(
+                        "Got DB metadata: " +
+                                "name '%s' " +
+                                "duration %f " +
+                                "remote id %d",
+                        recordingMetadata.getName(),
+                        recordingMetadata.getDuration(),
+                        recordingMetadata.getRemoteId()
+                ))
+                .map(new Cast<DbRecordingMetadata, RecordingMetadata>())
+                .lift(Fold.listAccumulator())
+                .doOnNext(recordingMetadatas -> Timber.d("folded results"));
     }
 
     private Observable<DatabaseService> observeDatabaseService(
@@ -289,6 +348,40 @@ public class MainActivity extends AppCompatActivity {
         );
     }
 
+    private Observable<RecordingService> observeRecordingService() {
+        return new RxServiceBinding<RecordingService.RecordingServiceBinder>(
+                this,
+                new Intent(this, RecordingService.class),
+                Service.BIND_IMPORTANT)
+                .binder(true)
+                .map(RecordingService.RecordingServiceBinder::getService);
+    }
+
+    private void updateUiForRecordingState(
+            RecordingService.RecordingServiceState recordingServiceState
+    ) {
+        switch(recordingServiceState) {
+            case MISSING_AUDIO_PERMISSION:
+                statusText.setText(
+                        R.string.recordStatusNoPermission
+                );
+                stopRecordingButton.setVisibility(View.GONE);
+                break;
+            case NOT_RECORDING:
+                statusText.setText(
+                        R.string.recordingStatusNotRecording
+                );
+                stopRecordingButton.setVisibility(View.GONE);
+                break;
+            case RECORDING:
+                statusText.setText(
+                        R.string.statusRecording
+                );
+                stopRecordingButton.setVisibility(View.VISIBLE);
+                break;
+        }
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -297,34 +390,37 @@ public class MainActivity extends AppCompatActivity {
         ButterKnife.setDebug(true);
         ButterKnife.bind(this);
 
-        Intent recordingIntent = new Intent(this, RecordingService.class);
-        startService(recordingIntent);
-        Timber.d("Started recording service.");
-        bindService(recordingIntent, recordingConnection, Context.BIND_IMPORTANT);
-        Timber.d("Bound recording service.");
-        recordingServiceIsBound = true;
-
-        Intent httpIntent = new Intent(this, HttpService.class);
-        startService(httpIntent);
-        Timber.d("Started HTTP service.");
-        bindService(httpIntent, httpConnection, Context.BIND_IMPORTANT);
-        final Subscription sub = observeHttpService(true)
+        final Subscription uiSub = observeRecordingService()
+                .doOnNext($ -> Timber.d("Got recording service!"))
+                .flatMap(RecordingService::observeState)
+                .doOnNext(state -> Timber.d(
+                        "Got recording state %s",
+                        state.toString()
+                ))
                 .observeOn(AndroidSchedulers.mainThread())
-                .subscribe(
+                .doOnNext(this::updateUiForRecordingState)
+                .subscribe();
+        subscriptions.add(uiSub);
+
+        final Subscription sub = observeHttpService(true)
+                .first()
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .flatMap(
                         this::withHttpService,
-                        error -> withoutHttpService(error)
+                        this::withoutHttpService,
+                        () -> Observable.just(null)
+                )
+                .subscribe(
+                        aVoid -> {},
+                        new TrivialErrorHandler("MainActivity.onCreate")
                 );
-
-        Timber.d("Bound HTTP service");
-        httpServiceIsBound = true;
-
-        availableRecordings = new ArrayList<>();
+        subscriptions.add(sub);
 
         RecyclerView.LayoutManager layoutManager
                 = new LinearLayoutManager(getApplicationContext());
         metadataRecyclerView.setLayoutManager(layoutManager);
-
-        mAdapter = new RecordingMetadataViewAdapter(availableRecordings, this);
+        mAdapter = new RecordingMetadataViewAdapter();
         metadataRecyclerView.setAdapter(mAdapter);
 
         // Check if we have fine location permissions, and set a flag to show that we do/don't.
@@ -357,74 +453,68 @@ public class MainActivity extends AppCompatActivity {
                 .map(HttpService.HttpServiceBinder::getService);
     }
 
-    private void withoutHttpService(Throwable error) {
+    private Observable<Void> withoutHttpService(Throwable error) {
         Timber.e("httpService unavailable");
         Toast.makeText(this, "Unable to connect to server.", Toast.LENGTH_LONG)
                 .show();
         error.printStackTrace();
         setMetadataListing(new ArrayList<>());
         metadataRecyclerView.setVisibility(View.GONE);
+        return Observable.just(null);
     }
 
-    private void withHttpService(HttpService httpService) {
-        if(httpService == null && this.httpService == null) {
-            Timber.e("Called withHttpService, but have no httpservice");
-            throw new RuntimeException("wtf yolo");
-        }
-        if(this.httpService == null)
-            this.httpService = httpService;
-        else if(httpService == null)
-            Timber.d("Reusing stored httpservice in withHttpService");
-
-        updateMetadataListing();
-    }
-
-    private void updateMetadataListing() {
-        // Populate the recycler view.
-        final Box<Subscription> box = new Box<>();
-        final Subscription sub = this.httpService.getMetadata()
-                .lift(new Map<ApiRecordingMetadata, RecordingMetadata>(
-                        RecordingMetadata::from
-                ))
-                .subscribeOn(Schedulers.io())
+    private Observable<Void> withHttpService(
+            HttpService httpService
+    ) {
+        return observeDatabaseService(true)
+                .observeOn(Schedulers.io())
+                .flatMap(databaseService ->
+                        updateMetadataListing(httpService, databaseService)
+                )
                 .observeOn(AndroidSchedulers.mainThread())
-                .subscribe(
-                        this::setMetadataListing,
-                        err -> {
-                            Timber.e("Error while retrieving recording metadata");
-                            err.printStackTrace();
-                            box.getValue().unsubscribe();
-                        }
-                );
-        box.setValue(sub);
-        subscriptions.add(sub);
+                .doOnNext(this::setMetadataListing)
+                .map($ -> null);
+    }
+
+    private Observable<DbRecordingMetadata> observeDatabaseMetadata(
+            DatabaseService databaseService) {
+        return databaseService.observeSimpleQueryOperation(
+                new DbRecordingMetadata.QueryAllOperation(),
+                new DbRecordingMetadataCursorAdapter())
+                .doOnNext(dbRecordingMetadata -> Timber.d(
+                        "Got DB recording metadata:" +
+                                "name %s " +
+                                "duration %.2f " +
+                                "time %s ",
+                        dbRecordingMetadata.getName(),
+                        dbRecordingMetadata.getDuration(),
+                        dbRecordingMetadata.getTimestamp().toString()
+                ));
     }
 
     private void setMetadataListing(List<RecordingMetadata> list) {
-        Timber.d(list.toString());
-        availableRecordings.clear();
-        for (final RecordingMetadata d : list) {
-            Timber.d("Metadata contains: duration: %s, timestamp: %s", d.getDuration(), d.getTimestamp());
-            availableRecordings.add(d);
+        synchronized(mAdapter) {
+            mAdapter.getRecordings().clear();
+            for (final RecordingMetadata d : list) {
+                Timber.d(
+                        "Metadata contains: " +
+                                "name: %s: " +
+                                "duration: %s, " +
+                                "timestamp: %s",
+                        d.getName(),
+                        d.getDuration(),
+                        d.getTimestamp()
+                );
+                mAdapter.getRecordings().add(d);
+            }
+            mAdapter.notifyDataSetChanged();
         }
-        mAdapter.notifyDataSetChanged();
         Timber.d("Updated and populated dataset for metadata list with %d items.", list.size());
         Timber.d("Now recycler view contains %d items.", mAdapter.getItemCount());
     }
 
     @Override
     protected void onDestroy() {
-        if(recordingServiceIsBound) {
-            unbindService(recordingConnection);
-            recordingServiceIsBound = false;
-        }
-
-
-        if(httpServiceIsBound) {
-            unbindService(httpConnection);
-            httpServiceIsBound = false;
-        }
-
         subscriptions.unsubscribe();
         super.onDestroy();
     }
@@ -443,19 +533,11 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void startRecording() {
+    private void startRecording(RecordingService recordingService) {
         try {
-            if(recordingService == null) {
-                Timber.e(
-                        "Cannot start recording, because recordingService is " +
-                                "null"
-                );
-                return;
-            }
-
             recordingService.startRecording();
         }
-        catch(RecordingService.MissingAudioRecordPermissionException e) {
+        catch(RecordingService.MissingAudioRecordPermissionException $) {
             ActivityCompat.requestPermissions(
                     MainActivity.this,
                     new String[] {Manifest.permission.RECORD_AUDIO},
@@ -465,100 +547,22 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    final ServiceConnection httpConnection = new ServiceConnection() {
-        @Override
-        public void onServiceConnected(ComponentName name, IBinder service) {
-            final HttpService.HttpServiceBinder binder = (HttpService.HttpServiceBinder) service;
-            httpService = binder.getService();
-            Timber.d("Assigned httpService");
-
-
-
-        }
-
-        @Override
-        public void onServiceDisconnected(ComponentName name) {
-            Timber.d("Http service disconnected");
-            httpService = null;
-        }
-    };
-
-    final ServiceConnection recordingConnection = new ServiceConnection() {
-        @Override
-        public void onServiceConnected(ComponentName name, IBinder service) {
-            final RecordingService.RecordingServiceBinder binder = (RecordingService.RecordingServiceBinder)service;
-            recordingService = binder.getService();
-            Timber.d("Assigned recording service");
-
-            final Subscription sub = recordingService.observeState()
-                    .subscribeOn(Schedulers.io())
-                    .observeOn(AndroidSchedulers.mainThread())
-                    .subscribe(
-                            state -> {
-                                switch(state) {
-                                    case RECORDING:
-                                        statusText.setText(R.string.recordingStatusRecording);
-                                        recordButton.setText(R.string.recordButtonTakeSnapshot);
-                                        stopRecordingButton.setVisibility(
-                                                View.VISIBLE
-                                        );
-                                        break;
-                                    case NOT_RECORDING:
-                                        statusText.setText(R.string.recordingStatusNotRecording);
-                                        recordButton.setText(
-                                                R.string.recordButtonStartRecording
-                                        );
-                                        stopRecordingButton.setVisibility(
-                                                View.GONE
-                                        );
-                                        break;
-                                    case MISSING_AUDIO_PERMISSION:
-                                        statusText.setText(
-                                                R.string.recordStatusNoPermission
-                                        );
-                                        recordButton.setText(
-                                                R.string.recordButtonPermitRecording
-                                        );
-                                        stopRecordingButton.setVisibility(
-                                                View.GONE
-                                        );
-                                        break;
-                                    default:
-                                        Timber.wtf(
-                                                "Exhaustive case analysis failed"
-                                        );
-                                        throw new RuntimeException("Oh dear.");
-                                }
-                            },
-                            error -> {
-                                statusText.setText(error.toString());
-                            },
-                            () -> {
-                                statusText.setText(R.string.statusPlaceholder);
-                            }
-                    );
-            subscriptions.add(sub);
-
-            startRecording();
-        }
-
-        @Override
-        public void onServiceDisconnected(ComponentName name) {
-            Timber.d("Recording service disconnected");
-            recordingService = null;
-        }
-    };
-
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         switch (requestCode) {
             case FINE_LOCATION_PERMISSION_REQUEST:
-                canUseFineLocation =  (grantResults[0] == PERMISSION_GRANTED);
+                // TODO actually do something with this fact
                 break;
             case RECORD_AUDIO_AND_START_REQUEST:
                 if(grantResults.length > 0 &&
                         grantResults[0] == PERMISSION_GRANTED) {
-                    startRecording();
+                    final Subscription sub = observeRecordingService()
+                            .doOnNext(this::startRecording)
+                            .subscribe(
+                                    $ -> {},
+                                    new TrivialErrorHandler()
+                            );
+                    subscriptions.add(sub);
                 }
                 else {
                     Timber.d("User refused audio recording permission.");
@@ -568,7 +572,16 @@ public class MainActivity extends AppCompatActivity {
                 if(grantResults.length > 0 &&
                         grantResults[0] == PERMISSION_GRANTED) {
                     Timber.d("Yay.");
-                    recordingService.checkState();
+                    final Subscription sub = observeRecordingService()
+                            .map(recordingService -> {
+                                recordingService.checkState();
+                                return null;
+                            })
+                            .subscribe(
+                                    $ -> {},
+                                    new TrivialErrorHandler()
+                            );
+                    subscriptions.add(sub);
                 }
                 else {
                     Timber.d("User refused audio recording permission.");

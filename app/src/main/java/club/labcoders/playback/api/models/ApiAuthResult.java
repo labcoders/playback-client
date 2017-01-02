@@ -1,6 +1,8 @@
 package club.labcoders.playback.api.models;
 
-public class ApiAuthResult {
+import club.labcoders.playback.data.SessionToken;
+
+public class ApiAuthResult implements SessionToken {
     private boolean success;
     private String token;
 
@@ -12,6 +14,8 @@ public class ApiAuthResult {
     public boolean getSuccess() {
         return success;
     }
+
+    @Override
     public String getToken() {
        return token;
    }

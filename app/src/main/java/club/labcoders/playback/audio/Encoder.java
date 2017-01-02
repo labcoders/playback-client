@@ -1,16 +1,12 @@
-package club.labcoders.playback;
+package club.labcoders.playback.audio;
 
-import android.media.AudioFormat;
 import android.media.MediaCodec;
 import android.media.MediaCodecInfo;
 import android.media.MediaFormat;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 
-import club.labcoders.playback.concurrent.CVar;
 import rx.Observable;
 import rx.Subscriber;
 import timber.log.Timber;

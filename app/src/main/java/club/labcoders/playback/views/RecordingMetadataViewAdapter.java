@@ -1,6 +1,5 @@
-package club.labcoders.playback;
+package club.labcoders.playback.views;
 
-import android.content.Context;
 import android.support.v7.widget.RecyclerView;
 import android.text.format.DateUtils;
 import android.view.LayoutInflater;
@@ -11,17 +10,21 @@ import android.widget.TextView;
 import org.joda.time.format.DateTimeFormat;
 import org.joda.time.format.DateTimeFormatter;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import butterknife.BindView;
 import butterknife.ButterKnife;
-import club.labcoders.playback.api.models.ApiRecordingMetadata;
+import club.labcoders.playback.R;
+import club.labcoders.playback.data.RecordingMetadata;
 
 public class RecordingMetadataViewAdapter extends RecyclerView.Adapter<RecordingMetadataViewAdapter.MetadataViewHolder>{
-    List<RecordingMetadata> availableRecordings;
-    DateTimeFormatter format;
-    public RecordingMetadataViewAdapter(List<RecordingMetadata> list, Context ctx) {
-        availableRecordings = list;
+    final List<RecordingMetadata> recordings;
+
+    final DateTimeFormatter format;
+
+    public RecordingMetadataViewAdapter() {
+        recordings = new ArrayList<>();
         format = DateTimeFormat.forPattern("yyyy-MM-dd HH:mm");
     }
 
@@ -34,13 +37,17 @@ public class RecordingMetadataViewAdapter extends RecyclerView.Adapter<Recording
 
     @Override
     public void onBindViewHolder(MetadataViewHolder holder, int position) {
-        final RecordingMetadata metadata = availableRecordings.get(position);
+        final RecordingMetadata metadata = recordings.get(position);
         holder.setFromRecordingMetadata(metadata);
     }
 
     @Override
     public int getItemCount() {
-        return availableRecordings.size();
+        return recordings.size();
+    }
+
+    public List<RecordingMetadata> getRecordings() {
+        return recordings;
     }
 
     public class MetadataViewHolder extends RecyclerView.ViewHolder {

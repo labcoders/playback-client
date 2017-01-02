@@ -1,4 +1,4 @@
-package club.labcoders.playback;
+package club.labcoders.playback.services;
 
 import android.Manifest;
 import android.app.Service;
@@ -11,6 +11,8 @@ import android.support.v4.content.ContextCompat;
 import java.nio.ShortBuffer;
 import java.util.concurrent.locks.ReentrantLock;
 
+import club.labcoders.playback.audio.AudioManager;
+import club.labcoders.playback.data.CircularShortBuffer;
 import rx.Observable;
 import rx.Subscription;
 import rx.schedulers.Schedulers;
@@ -450,8 +452,8 @@ public class RecordingService extends Service {
         }
     }
 
-    class RecordingServiceBinder extends Binder {
-        RecordingService getService() {
+    public class RecordingServiceBinder extends Binder {
+        public RecordingService getService() {
             return RecordingService.this;
         }
     }

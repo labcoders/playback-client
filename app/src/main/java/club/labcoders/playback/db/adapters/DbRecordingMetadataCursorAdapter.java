@@ -3,41 +3,25 @@ package club.labcoders.playback.db.adapters;
 import android.database.Cursor;
 
 import club.labcoders.playback.db.CursorAdapter;
-import club.labcoders.playback.db.models.DateTimeAdapter;
+import club.labcoders.playback.db.columns.ReadColumn;
 import club.labcoders.playback.db.models.DbRecordingMetadata;
-import club.labcoders.playback.db.models.RecordingFormat;
+import club.labcoders.playback.db.tables.RecordingTable;
 
 public class DbRecordingMetadataCursorAdapter
         implements CursorAdapter<DbRecordingMetadata> {
+    private final static RecordingTable table = RecordingTable.INSTANCE;
+
     @Override
     public DbRecordingMetadata fromCursor(Cursor cursor) {
-        final int remoteIdColumn = cursor.getColumnIndex("remote_id");
-        final int latitudeColumn = cursor.getColumnIndex("latitude");
-        final int longitudeColumn = cursor.getColumnIndex("longitude");
-
-        final boolean remoteIdIsNull = cursor.isNull(remoteIdColumn);
-        final boolean latitudeIsNull = cursor.isNull(latitudeColumn);
-        final boolean longitudeIsNull = cursor.isNull(longitudeColumn);
-
         return new DbRecordingMetadata(
-                cursor.getInt(cursor.getColumnIndex("id")),
-                remoteIdIsNull ?
-                        null :
-                        cursor.getInt(remoteIdColumn),
-                cursor.getDouble(cursor.getColumnIndex("duration")),
-                latitudeIsNull ?
-                        null :
-                        cursor.getDouble(latitudeColumn),
-                longitudeIsNull ?
-                        null :
-                        cursor.getDouble(longitudeColumn),
-                cursor.getString(cursor.getColumnIndex("name")),
-                new DateTimeAdapter().fromInteger(cursor.getLong(
-                        cursor.getColumnIndex("timestamp")
-                )),
-                RecordingFormat.fromInteger(
-                        cursor.getInt(cursor.getColumnIndex("format"))
-                )
+                ReadColumn.Misc.get(table.ID, cursor),
+                ReadColumn.Misc.getNullable(table.REMOTE_ID, cursor),
+                ReadColumn.Misc.get(table.DURATION, cursor),
+                ReadColumn.Misc.getNullable(table.LATITUDE, cursor),
+                ReadColumn.Misc.getNullable(table.LONGITUDE, cursor),
+                ReadColumn.Misc.get(table.NAME, cursor),
+                ReadColumn.Misc.get(table.RECORDED_AT, cursor),
+                ReadColumn.Misc.get(table.FORMAT, cursor)
         );
     }
 }

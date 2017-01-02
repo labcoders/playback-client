@@ -1,49 +1,23 @@
 package club.labcoders.playback.misc;
 
-import android.support.annotation.NonNull;
-
 import java.util.ArrayList;
 import java.util.List;
 
-import rx.Observable;
-import rx.Subscriber;
 import rx.functions.Func1;
 
-/**
- * An Rx operator to perform a map on a list passed through the pipeline.
- * @param <S> Source type
- * @param <T> Target type
- */
-public class Map<S, T> implements Observable.Operator<List<T>, List<S>> {
-    private final Func1<S, T> func;
+public class Map<A, B> implements Func1<List<A>, List<B>> {
+    private final Func1<A, B> function;
 
-    public Map(@NonNull final Func1<S, T> func) {
-        this.func = func;
+    public Map(Func1<A, B> function) {
+        this.function = function;
     }
 
     @Override
-    public Subscriber<? super List<S>> call(
-            Subscriber<? super List<T>> subscriber
-    ) {
-        return new Subscriber<List<S>>() {
-            @Override
-            public void onCompleted() {
-                subscriber.onCompleted();
-            }
-
-            @Override
-            public void onError(Throwable e) {
-
-            }
-
-            @Override
-            public void onNext(List<S> ss) {
-                final List<T> results = new ArrayList<>(ss.size());
-                for(final S s : ss) {
-                    results.add(func.call(s));
-                }
-                subscriber.onNext(results);
-            }
-        };
+    public List<B> call(List<A> as) {
+        final List<B> bs = new ArrayList<B>(as.size());
+        for(final A a : as) {
+            bs.add(function.call(a));
+        }
+        return bs;
     }
 }

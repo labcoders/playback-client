@@ -1,17 +1,16 @@
-package club.labcoders.playback;
+package club.labcoders.playback.audio;
 
-import android.media.MediaCodec;
-import android.media.MediaFormat;
 import android.media.MediaMuxer;
 
 import org.joda.time.DateTime;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 
+import club.labcoders.playback.audio.EncodedOutput;
+import club.labcoders.playback.audio.Encoder;
 import rx.Observable;
 import rx.Subscriber;
 import timber.log.Timber;

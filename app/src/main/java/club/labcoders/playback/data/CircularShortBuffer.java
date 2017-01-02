@@ -1,4 +1,4 @@
-package club.labcoders.playback;
+package club.labcoders.playback.data;
 
 import timber.log.Timber;
 
